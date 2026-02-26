@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RIG | Jogos de Conversa e Diversão</title>
+    <meta name="description" content="Conheça os jogos RIG! Diversão garantida para amigos e família. Compre agora e transforme seus encontros.">
+    <link rel="stylesheet" href="src/css/style.css">
+    <link rel="stylesheet" href="src/css/footer.css">
+    <link rel="icon" href="src/img/logo.png" type="image/png">
+</head>
+<body>
+    <h1 class="sr-only">RIG - Jogos de Conversa e Diversão</h1>
+    <header id="main-header" class="header">
+        <button class="menu-btn" aria-label="Abrir menu">
+            <span class="hamburger"></span>
+        </button>
+        <img src="src/img/logo.png" alt="Logo RIG" class="logo">
+        <div class="header-actions">
+            <button class="search-btn" aria-label="Buscar">
+                <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </button>
+            <a href="login.html" class="btn-entrar" style="margin-left:24px;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;"><path d="M9 18l6-6-6-6"/><path d="M15 12H3"/><rect x="17" y="3" width="4" height="18" rx="2"/></svg>
+                <span>Entrar</span>
+            </a>
+        </div>
+    </header>
+    <section class="hero"></section>
+        <main>
+            <section class="produtos">
+            <div class="produtos-wrapper">
+                <h2 class="produtos-titulo">Nossos Produtos</h2>
+                <div class="produtos-grid">
+                    <article class="produto-card">
+                        <div class="produto-img-bg">
+                            <img src="src/img/acerteinamosca.png" alt="Jogo Acertei na Mosca?" class="produto-img">
+                        </div>
+                        <h3 class="produto-nome">Acertei Na Mosca?</h3>
+                        <p class="produto-desc">O jogo de curiosidades divertido e relaxante em que o chute mais certeiro vence!</p>
+                    </article>
+                    <article class="produto-card">
+                        <div class="produto-img-bg">
+                            <img src="src/img/vaciloudancou.png" alt="Jogo Vacilou, Dançou" class="produto-img">
+                        </div>
+                        <h3 class="produto-nome">Vacilou, Dançou</h3>
+                        <p class="produto-desc">Um jogo de curiosidades viciante e divertido que dá uma segunda chance ao participante que vai ter que sobreviver...</p>
+                    </article>
+                    <article class="produto-card">
+                        <div class="produto-img-bg">
+                            <img src="src/img/quemnaroda.png" alt="Jogo Quem na roda?" class="produto-img">
+                        </div>
+                        <h3 class="produto-nome">Quem na roda?</h3>
+                        <p class="produto-desc">Quem na roda faz xixi no chuveiro? E quem na roda tem a melhor voz para rádio? Quem na roda sobrevive?</p>
+                    </article>
+                    <article class="produto-card">
+                        <div class="produto-img-bg">
+                            <img src="src/img/hyggegame.png" alt="O Hygge Game" class="produto-img">
+                        </div>
+                        <h3 class="produto-nome">O Hygge Game</h3>
+                        <p class="produto-desc">O jogo tem como objetivo reunir as pessoas, incentivando amigos e familiares a compartilhar suas histórias.</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+    </main>
+    <script src="src/js/script.js"></script>
+    <div id="footer-container"></div>
+    <script>
+      fetch('src/components/footer.html')
+        .then(response => response.text())
+        .then(html => {
+          document.getElementById('footer-container').innerHTML = html;
+        });
+    </script>
+</body>
+</html>

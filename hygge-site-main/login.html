@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | RIG</title>
+    <meta name="description" content="Página de login para acessar sua conta RIG.">
+    <link rel="stylesheet" href="src/css/style.css">
+    <link rel="stylesheet" href="src/css/footer.css">
+    <link rel="icon" href="src/img/logo.png" type="image/png">
+</head>
+<body>
+    <h1 class="sr-only">Login - RIG</h1>
+    <header id="main-header" class="header">
+        <button class="menu-btn" aria-label="Abrir menu">
+            <span class="hamburger"></span>
+        </button>
+        <img src="src/img/logo.png" alt="Logo RIG" class="logo">
+        <button class="search-btn" aria-label="Buscar">
+            <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+    </header>
+    <section class="hero" style="width:100vw;height:70vh;min-height:0;overflow:hidden;padding:0;margin:0;display:flex;align-items:center;justify-content:center;background:none;">
+        <img src="src/img/bannerentrar.png" alt="Banner Login" style="width:100vw;height:100%;object-fit:cover;display:block;">
+        <div class="login-center-wrapper">
+          <div class="login-container">
+            <div style="width:100%;text-align:center;padding-top:0;margin-bottom:-32px;">
+              <h2 style="font-family:'Inter',Arial,sans-serif;font-size:1.35rem;font-weight:700;margin:0 0 6px 0;color:#222;">Entrar</h2>
+              <div style="font-size:1rem;color:#444;opacity:0.85;">Obrigado pela visita. Insira seus dados de login.</div>
+              <div class="login-logo" style="margin:8px auto 0 auto;">
+                <img src="src/img/logo.png" alt="Logo Hygge Games">
+              </div>
+            </div>
+            <form class="login-form" style="margin-top:-10px;gap:7px;">
+              <input class="login-input" type="text" placeholder="Usuário ou e-mail" autocomplete="username">
+              <input class="login-input" type="password" placeholder="Senha" autocomplete="current-password">
+              <button class="login-btn" type="submit">Entrar</button>
+              <button type="button" style="width:98%;background:#fff;color:#00966C;border:2px solid #00966C;border-radius:20px;padding:12px 0;font-size:1.1rem;font-weight:600;cursor:pointer;margin:5px 0 0 0;transition:background 0.2s;text-align:center;box-shadow:0 2px 8px 0 rgba(0,0,0,0.04);" onmouseover="this.style.background='#f3f3f3'" onmouseout="this.style.background='#fff'" onclick="window.location.href='cadastro.html'">Cadastrar-se</button>
+            </form>
+            <a href="#" class="login-forgot" style="margin-top:9px;">Esqueci minha senha</a>
+          </div>
+        </div>
+    </section>
+    <main>
+        <section style="background:#FAE696;padding:60px 0;text-align:center;">
+            <h2 style="font-family:'Georgia',serif;font-size:2.5rem;font-weight:bold;margin-bottom:24px;">Seja um revendedor da Hygge Games</h2>
+            <p style="max-width:800px;margin:0 auto 32px auto;font-size:1.25rem;line-height:1.5;">Você tem uma loja e quer vender jogos que seus clientes vão adorar? Este é o lugar certo, pois nossos jogos são divertidíssimos, simples de jogar e fáceis de aprender, não exigindo leituras de regras complicadas ou rodadas muito longas. A diversão deve rolar fácil, assim como é fácil se tornar um revendedor da Hygge Games. Clique aqui para saber mais.</p>
+            <a href="#" style="display:inline-block;background:#00966C;color:#fff;font-size:1.4rem;font-weight:600;padding:18px 48px;border-radius:40px;text-decoration:none;transition:background 0.2s;">Seja um revendedor</a>
+        </section>
+    </main>
+    <div id="footer-container"></div>
+    <script src="src/js/script.js"></script>
+    <script type="module">
+      import { auth } from './src/firebase/firebaseConfig.js';
+      import { signInWithEmailAndPassword } from 'firebase/auth';
+      document.addEventListener('DOMContentLoaded', () => {
+        const form = document.querySelector('.login-form');
+        if (!form) return;
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const email = form.querySelector('input[type="text"]').value.trim();
+          const password = form.querySelector('input[type="password"]').value;
+          try {
+            await signInWithEmailAndPassword(auth, email, password);
+            window.location.href = 'login-ok.html';
+          } catch (err) {
+            alert('Erro ao fazer login: ' + (err.message || 'Verifique seu e-mail e senha.'));
+          }
+        });
+      });
+    </script>
+    <script>
+      fetch('src/components/footer.html')
+        .then(response => response.text())
+        .then(html => {
+          document.getElementById('footer-container').innerHTML = html;
+        });
+    </script>
+</body>
+</html>
