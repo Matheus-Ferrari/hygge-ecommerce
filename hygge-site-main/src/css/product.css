@@ -1,0 +1,332 @@
+/* product.css - Página de detalhes do produto (Hygge Games) */
+
+.product-page {
+  background: var(--bege-bg);
+  padding: 72px 0 88px 0;
+  min-height: 60vh;
+}
+
+.product-detail {
+  width: 85%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.product-detail__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    "media content"
+    "spec spec"
+    "tech tech";
+  column-gap: 56px;
+  row-gap: 32px;
+  background: var(--branco);
+  border-radius: 32px;
+  padding: 40px;
+  box-shadow: var(--sombra-card);
+  box-sizing: border-box;
+}
+
+.product-detail__media {
+  grid-area: media;
+}
+
+.product-detail__content {
+  grid-area: content;
+}
+
+.product-detail__tech {
+  grid-area: tech;
+}
+
+.product-detail__tech .product-section {
+  margin-top: 0;
+}
+
+.product-detail__imageWrap {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: #EDE8E3;
+  border-radius: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.product-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.product-thumbnails {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+
+.product-thumbnails .thumbnail {
+  width: 84px;
+  height: 84px;
+  flex: 0 0 auto;
+  border-radius: 18px;
+  background: #EDE8E3;
+  border: 1px solid rgba(0,0,0,0.10);
+  padding: 6px;
+  object-fit: cover;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.product-thumbnails .thumbnail.is-active {
+  border-color: rgba(0,0,0,0.35);
+}
+
+.product-detail__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.product-detail__content {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.product-detail__title {
+  margin: 0 0 10px 0;
+  font-size: 2.2rem;
+  line-height: 1.15;
+}
+
+.product-detail__price {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 1.8rem;
+  color: #c62828;
+  margin: 6px 0 18px 0;
+}
+
+.product-detail__description {
+  margin: 0 0 22px 0;
+  color: #222;
+}
+
+.product-detail__buy {
+  margin: 10px 0 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.product-detail__qtyRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.product-detail__btnRow {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.product-detail__btnRow .btn-comprar {
+  margin: 0;
+  flex: 1 1 220px;
+}
+
+.product-detail__label {
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+.product-detail__qty {
+  width: 92px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid rgba(0,0,0,0.14);
+  padding: 0 12px;
+  font-size: 1.05rem;
+  font-family: var(--font-sans);
+}
+
+/* Reaproveita a aparência do site (.btn-comprar) e ajusta para botão */
+#add-to-cart-btn {
+  margin: 0;
+}
+
+#buy-now-btn {
+  margin: 0;
+}
+
+#add-to-cart-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.product-spec {
+  background: #f2f2f2;
+  border-radius: 24px;
+  padding: 18px 20px;
+}
+
+.product-spec__title {
+  margin: 0 0 12px 0;
+  font-size: 1.2rem;
+}
+
+.product-spec__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 6px 0;
+  font-family: var(--font-sans);
+}
+
+.product-message {
+  margin: 14px 0 0 0;
+  font-family: var(--font-sans);
+  font-size: 1.02rem;
+  color: #222;
+}
+
+.product-section {
+  margin-top: 18px;
+}
+
+.product-detail__media .product-section {
+  margin-top: 12px;
+}
+
+#game-specs.product-spec {
+  padding: 14px 16px;
+}
+
+.product-section__title {
+  margin: 0 0 10px 0;
+  font-size: 1.2rem;
+}
+
+.product-detail__fullDescription {
+  font-family: 'Poppins', 'Sinkin Sans', Arial, sans-serif;
+  font-weight: 300;
+  font-size: 1.12rem;
+  line-height: 1.75;
+  color: #222;
+  text-align: justify;
+}
+
+.product-detail__fullDescription p {
+  margin: 0 0 14px 0;
+}
+
+.product-detail__fullDescription.is-collapsed {
+  max-height: 220px;
+  overflow: hidden;
+}
+
+.product-detail__toggleDesc {
+  margin-top: 10px;
+  align-self: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  color: var(--verde-header);
+  cursor: pointer;
+}
+
+.product-detail__toggleDesc:hover,
+.product-detail__toggleDesc:focus {
+  text-decoration: underline;
+}
+
+.product-spec--inline {
+  box-shadow: none;
+}
+
+.product-detail__specRow {
+  grid-area: spec;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .product-page {
+    padding: 44px 0 64px 0;
+  }
+  .product-detail {
+    width: 92%;
+  }
+  .product-detail__grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "media"
+      "content"
+      "spec"
+      "tech";
+    gap: 24px;
+    padding: 22px;
+    border-radius: 26px;
+  }
+  .product-detail__title {
+    font-size: 1.7rem;
+  }
+  .product-detail__price {
+    font-size: 1.4rem;
+  }
+  .product-detail__buy {
+    gap: 12px;
+  }
+  .product-detail__qty {
+    width: 100%;
+    max-width: 160px;
+  }
+
+  .product-detail__btnRow .btn-comprar {
+    flex: 1 1 100%;
+  }
+
+  .product-gallery {
+    gap: 14px;
+  }
+
+  .product-thumbnails {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .product-thumbnails::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  .product-thumbnails .thumbnail {
+    width: 78px;
+    height: 78px;
+    flex: 0 0 auto;
+  }
+
+  .product-detail__specRow {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+}

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Perfil | Hygge Games</title>
+  <meta name="description" content="Seu perfil Hygge Games: dados, endereço, privacidade e favoritos." />
+  <link rel="stylesheet" href="src/css/style.css" />
+  <link rel="stylesheet" href="src/css/footer.css" />
+  <link rel="stylesheet" href="src/css/profile.css" />
+  <link rel="icon" href="src/img/logo.png" type="image/png" />
+</head>
+<body>
+  <h1 class="sr-only">Perfil - Hygge Games</h1>
+
+  <header id="main-header" class="header">
+    <button class="menu-btn" aria-label="Abrir menu">
+      <span class="hamburger"></span>
+      <span class="hamburger"></span>
+      <span class="hamburger"></span>
+    </button>
+    <a href="index.html" aria-label="Ir para a página inicial">
+      <img src="src/img/logo.png" alt="Logo Hygge Games" class="logo" />
+    </a>
+    <div class="header-actions">
+      <button class="search-btn" aria-label="Buscar">
+        <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+      <a href="login.html" class="btn-entrar" style="margin-left:24px;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;"><path d="M9 18l6-6-6-6"/><path d="M15 12H3"/><rect x="17" y="3" width="4" height="18" rx="2"/></svg>
+        <span>Entrar</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="profile-page">
+    <section class="profile-header">
+      <div class="container-large">
+        <h2 class="section-title">Meu perfil</h2>
+        <p class="profile-subtitle">Aqui você pode ver seus dados, atualizar endereço, ajustar preferências de privacidade e organizar seus favoritos.</p>
+      </div>
+    </section>
+
+    <section class="container-large">
+      <div id="profile-logged-out" class="profile-card" hidden>
+        <h3 class="profile-card__title">Você ainda não entrou</h3>
+        <p class="profile-muted">Para acessar seu perfil, faça login com sua conta Hygge Games.</p>
+        <div class="profile-actions">
+          <a class="btn-comprar" href="login.html">Entrar</a>
+          <a class="btn-mostrar-jogos" href="cadastro.html">Criar conta</a>
+        </div>
+      </div>
+
+      <div id="profile-logged-in" hidden>
+        <div class="profile-tabs" role="tablist" aria-label="Seções do perfil">
+          <button class="profile-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="tab-perfil" data-tab="perfil">Meu perfil</button>
+          <button class="profile-tab" type="button" role="tab" aria-selected="false" aria-controls="tab-pedidos" data-tab="pedidos">Meus pedidos</button>
+        </div>
+
+        <div id="tab-perfil" class="profile-tabPanel profile-grid" role="tabpanel" data-panel="perfil">
+          <div class="profile-card">
+          <h3 class="profile-card__title">Dados da conta</h3>
+          <div class="profile-kv">
+            <div class="profile-kv__item"><span>E-mail</span><strong id="profile-email">—</strong></div>
+            <div class="profile-kv__item"><span>ID</span><strong id="profile-uid">—</strong></div>
+          </div>
+
+          <form id="profile-form" class="profile-form" autocomplete="on">
+            <div class="profile-row">
+              <label for="nome">Nome completo</label>
+              <input id="nome" name="nome" type="text" placeholder="Seu nome" />
+            </div>
+            <div class="profile-row">
+              <label for="telefone">Telefone</label>
+              <input id="telefone" name="telefone" type="tel" placeholder="(00) 00000-0000" />
+            </div>
+
+            <div class="profile-actions">
+              <button class="btn-comprar" type="submit">Salvar alterações</button>
+              <a class="btn-mostrar-jogos" href="todos-os-jogos.html">Ir para o catálogo</a>
+            </div>
+            <div id="profile-status" class="profile-status" aria-live="polite"></div>
+          </form>
+        </div>
+
+          <div class="profile-card">
+          <h3 class="profile-card__title">Endereço</h3>
+          <div class="profile-form">
+            <div class="profile-row">
+              <label for="cep">CEP</label>
+              <input id="cep" name="cep" type="text" placeholder="00000-000" />
+            </div>
+            <div class="profile-row">
+              <label for="rua">Rua</label>
+              <input id="rua" name="rua" type="text" placeholder="Rua / Avenida" />
+            </div>
+            <div class="profile-row">
+              <label for="numero">Número</label>
+              <input id="numero" name="numero" type="text" placeholder="Número" />
+            </div>
+            <div class="profile-row">
+              <label for="complemento">Complemento</label>
+              <input id="complemento" name="complemento" type="text" placeholder="Apto, bloco, etc." />
+            </div>
+            <div class="profile-row">
+              <label for="bairro">Bairro</label>
+              <input id="bairro" name="bairro" type="text" placeholder="Bairro" />
+            </div>
+            <div class="profile-row">
+              <label for="cidade">Cidade</label>
+              <input id="cidade" name="cidade" type="text" placeholder="Cidade" />
+            </div>
+            <div class="profile-row">
+              <label for="estado">Estado</label>
+              <input id="estado" name="estado" type="text" placeholder="UF" />
+            </div>
+            <p class="profile-muted">O endereço é usado para facilitar seu preenchimento e comunicações sobre pedidos.</p>
+          </div>
+        </div>
+
+          <div class="profile-card profile-card--full">
+          <h3 class="profile-card__title">Privacidade</h3>
+          <div class="profile-form">
+            <label class="profile-checkbox">
+              <input id="privacy-updates" type="checkbox" />
+              <span>Quero receber atualizações sobre pedidos e novidades importantes.</span>
+            </label>
+            <label class="profile-checkbox">
+              <input id="privacy-marketing" type="checkbox" />
+              <span>Quero receber ofertas e comunicações de marketing.</span>
+            </label>
+            <p class="profile-muted">Você pode alterar essas preferências quando quiser.</p>
+          </div>
+        </div>
+
+          <div class="profile-card profile-card--full">
+          <h3 class="profile-card__title">Favoritos</h3>
+          <div class="profile-form">
+            <div class="profile-row">
+              <label for="favorite-select">Adicionar um jogo aos favoritos</label>
+              <select id="favorite-select" aria-label="Selecionar jogo"></select>
+            </div>
+            <div class="profile-actions">
+              <button id="favorite-add" class="btn-comprar" type="button">Adicionar aos favoritos</button>
+              <a class="btn-mostrar-jogos" href="todos-os-jogos.html">Ver catálogo</a>
+            </div>
+
+            <p id="favorites-empty" class="profile-muted">Você ainda não tem favoritos.</p>
+            <div id="favorites-list" class="profile-favs" aria-label="Lista de favoritos"></div>
+          </div>
+          </div>
+        </div>
+
+        <div id="tab-pedidos" class="profile-tabPanel" role="tabpanel" data-panel="pedidos" hidden>
+          <div class="profile-card profile-card--full">
+            <h3 class="profile-card__title">Meus pedidos</h3>
+            <p id="orders-empty" class="profile-muted" hidden>Você ainda não tem pedidos.</p>
+            <div id="orders-status" class="profile-status" aria-live="polite"></div>
+            <div id="orders-list" class="profile-orders" aria-label="Lista de pedidos"></div>
+            <div class="profile-actions">
+              <a class="btn-mostrar-jogos" href="todos-os-jogos.html">Ir para o catálogo</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="footer-container"></div>
+
+  <script src="src/js/menu.js"></script>
+  <script type="module" src="src/js/headerUser.js"></script>
+  <script type="module" src="src/js/profile.js"></script>
+  <script>
+    fetch('src/components/footer.html')
+      .then(response => response.text())
+      .then(html => {
+        document.getElementById('footer-container').innerHTML = html;
+      });
+  </script>
+</body>
+</html>

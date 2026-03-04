@@ -1,0 +1,143 @@
+/* faq.css - Página FAQ (Hygge Games) */
+
+.faq-page {
+  background: var(--bege-bg);
+  padding: 64px 0 88px 0;
+  min-height: 60vh;
+}
+
+/* Header fixo e sólido apenas no FAQ */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background: var(--verde-header);
+}
+
+.header.header--scrolled {
+  background: var(--verde-header);
+}
+
+.faq-hero {
+  padding: 46px 0 22px 0;
+}
+
+.faq-hero__inner {
+  text-align: left;
+}
+
+.faq-title {
+  margin: 0 0 22px 0;
+  font-family: var(--font-serif);
+  font-size: 2.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #111;
+}
+
+.faq-title--secondary {
+  margin-top: 44px;
+}
+
+.faq-section {
+  padding-bottom: 18px;
+}
+
+.faq-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.faq-item {
+  background: var(--branco);
+  border-radius: 18px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.faq-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 18px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.faq-question {
+  font-family: var(--font-sans);
+  font-size: 1.12rem;
+  font-weight: 700;
+  color: #111;
+}
+
+.faq-icon {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: var(--branco);
+  font-family: var(--font-sans);
+  font-weight: 800;
+  color: var(--verde-header);
+  flex: 0 0 auto;
+}
+
+.faq-panel {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 280ms ease;
+}
+
+.faq-panel__inner {
+  padding: 0 18px 18px 18px;
+  font-family: var(--font-sans);
+  font-size: 1.05rem;
+  line-height: 1.8;
+  color: #222;
+}
+
+.faq-panel__inner p {
+  margin: 0 0 12px 0;
+}
+
+/* Links normais (ex: mailto) em verde */
+.faq-panel__inner a:not(.btn-comprar) {
+  color: var(--verde-header);
+}
+
+/* Botões CTA reutilizam .btn-comprar com texto branco */
+.faq-panel__inner a.btn-comprar {
+  color: var(--branco);
+}
+
+.faq-cta {
+  margin: 10px 0 0 0;
+  display: inline-block;
+}
+
+.faq-item.is-open .faq-trigger {
+  padding-bottom: 10px;
+}
+
+.faq-item.is-open .faq-icon {
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+@media (max-width: 768px) {
+  .faq-page {
+    padding: 44px 0 64px 0;
+  }
+
+  .faq-title {
+    font-size: 2.0rem;
+  }
+}

@@ -51,7 +51,7 @@
                         <h3 class="product-card__title">Acertei Na Mosca?</h3>
                         <p class="produto-desc">O jogo de curiosidades divertido e relaxante em que o chute mais certeiro vence!</p>
                         <div class="preco-destaque">R$ 99,90</div>
-                        <a href="#" class="btn-comprar">Comprar</a>
+                        <a href="produto.html?id=acertei-na-mosca" class="btn-comprar">Comprar</a>
                     </article>
                     <!-- Produto 2 -->
                     <article class="produto-card">
@@ -61,7 +61,7 @@
                         <h3 class="product-card__title">Vacilou, Dançou</h3>
                         <p class="produto-desc">Um jogo de curiosidades viciante e divertido que dá uma segunda chance ao participante que vai ter que sobreviver...</p>
                         <div class="preco-destaque">R$ 99,90</div>
-                        <a href="#" class="btn-comprar">Comprar</a>
+                        <a href="produto.html?id=vacilou-dancou" class="btn-comprar">Comprar</a>
                     </article>
                     <!-- Produto 3 -->
                     <article class="produto-card">
@@ -71,7 +71,7 @@
                         <h3 class="product-card__title">Quem na roda?</h3>
                         <p class="produto-desc">Quem na roda faz xixi no chuveiro? E quem na roda tem a melhor voz para rádio? Quem na roda sobrevive?</p>
                         <div class="preco-destaque">R$ 99,90</div>
-                        <a href="#" class="btn-comprar">Comprar</a>
+                        <a href="produto.html?id=quem-na-roda" class="btn-comprar">Comprar</a>
                     </article>
                     <!-- Produto 4 -->
                     <article class="produto-card">
@@ -81,17 +81,17 @@
                         <h3 class="product-card__title">O Hygge Game</h3>
                         <p class="produto-desc">O jogo tem como objetivo reunir as pessoas, incentivando amigos e familiares a compartilhar suas histórias.</p>
                         <div class="preco-destaque">R$ 99,90</div>
-                        <a href="#" class="btn-comprar">Comprar</a>
+                        <a href="produto.html?id=hygge-game" class="btn-comprar">Comprar</a>
                     </article>
                     <!-- Produto 5 (novo) -->
                     <article class="produto-card">
                         <div class="produto-img-bg">
-                            <img src="src/img/coisasquenaoensiam.png" alt="Coisas que não te ensinam" class="produto-img">
+                            <img src="src/img/coisasquenaoensinam.png" alt="Coisas que não ensinam na escola" class="produto-img">
                         </div>
-                        <h3 class="product-card__title">Coisas que não te ensinam</h3>
+                        <h3 class="product-card__title">Coisas que não ensinam na escola</h3>
                         <p class="produto-desc">Uma mistura louca de fatos curiosos, perguntas aleatórias e conhecimento totalmente inútil!</p>
                         <div class="preco-destaque">R$ 99,90</div>
-                        <a href="#" class="btn-comprar">Comprar</a>
+                        <a href="produto.html?id=coisas-que-nao-ensinam-na-escola" class="btn-comprar">Comprar</a>
                     </article>
                     <!-- Produto 6 (novo) -->
                     <article class="produto-card">
@@ -101,7 +101,7 @@
                         <h3 class="product-card__title">Eu deveria saber isso!</h3>
                         <p class="produto-desc">Teste seu conhecimento sobre curiosidades do mundo e descubra o quanto você realmente sabe!</p>
                         <div class="preco-destaque">R$ 99,90</div>
-                        <a href="#" class="btn-comprar">Comprar</a>
+                        <a href="produto.html?id=eu-deveria-saber-isso" class="btn-comprar">Comprar</a>
                     </article>
                 </div>
             </div>
@@ -109,12 +109,14 @@
         <section style="background:#FAE696;padding:60px 0;text-align:center;">
             <h2 style="font-family:'Georgia',serif;font-size:2.5rem;font-weight:bold;margin-bottom:24px;">Seja um revendedor da Hygge Games</h2>
             <p style="max-width:800px;margin:0 auto 32px auto;font-size:1.25rem;line-height:1.5;">Você tem uma loja e quer vender jogos que seus clientes vão adorar? Este é o lugar certo, pois nossos jogos são divertidíssimos, simples de jogar e fáceis de aprender, não exigindo leituras de regras complicadas ou rodadas muito longas. A diversão deve rolar fácil, assim como é fácil se tornar um revendedor da Hygge Games. Clique aqui para saber mais.</p>
-            <a href="#" style="display:inline-block;background:#00966C;color:#fff;font-size:1.4rem;font-weight:600;padding:18px 48px;border-radius:40px;text-decoration:none;transition:background 0.2s;">Seja um revendedor</a>
+            <a href="faq.html#revendedores" style="display:inline-block;background:#00966C;color:#fff;font-size:1.4rem;font-weight:600;padding:18px 48px;border-radius:40px;text-decoration:none;transition:background 0.2s;">Seja um revendedor</a>
         </section>
     </main>
     <div id="footer-container"></div>
     <script src="src/js/menu.js"></script>
     <script src="src/js/script.js"></script>
+        <script type="module" src="src/js/todosJogos.js"></script>
+        <script type="module" src="src/js/headerUser.js"></script>
     <script>
       fetch('src/components/footer.html')
         .then(response => response.text())

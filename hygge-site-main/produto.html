@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Produto | Hygge Games</title>
+    <meta name="description" content="Detalhes do produto Hygge Games. Veja informações, estoque e adicione ao carrinho.">
+    <link rel="stylesheet" href="src/css/style.css">
+    <link rel="stylesheet" href="src/css/footer.css">
+    <link rel="stylesheet" href="src/css/product.css">
+    <link rel="icon" href="src/img/logo.png" type="image/png">
+</head>
+<body>
+    <h1 class="sr-only">Produto - Hygge Games</h1>
+
+    <!-- HEADER (copiado exatamente de todos-os-jogos.html) -->
+    <header id="main-header" class="header">
+        <button class="menu-btn" aria-label="Abrir menu">
+            <span class="hamburger"></span>
+            <span class="hamburger"></span>
+            <span class="hamburger"></span>
+        </button>
+        <a href="index.html"><img src="src/img/logo.png" alt="Logo Hygge Games" class="logo"></a>
+        <div class="header-actions">
+            <button class="search-btn" aria-label="Buscar">
+                <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </button>
+            <a href="login.html" class="btn-entrar" style="margin-left:24px;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;"><path d="M9 18l6-6-6-6"/><path d="M15 12H3"/><rect x="17" y="3" width="4" height="18" rx="2"/></svg>
+                <span>Entrar</span>
+            </a>
+        </div>
+    </header>
+    <section class="hero"></section>
+    <script src="src/js/menu.js"></script>
+    <script type="module" src="src/js/headerUser.js"></script>
+
+    <!-- CONTEÚDO DA PÁGINA DE PRODUTO -->
+    <main class="product-page">
+        <section class="product-detail container-large" aria-label="Detalhes do produto">
+            <div class="product-detail__grid">
+                <div class="product-detail__media">
+                    <div class="product-gallery" aria-label="Galeria do produto">
+                        <div class="product-detail__imageWrap">
+                            <img id="mainProductImage" class="product-detail__image" src="" alt="" />
+                        </div>
+                        <div id="product-thumbnails" class="product-thumbnails" aria-label="Miniaturas"></div>
+                    </div>
+                </div>
+                <div class="product-detail__content">
+                    <h1 id="product-name" class="product-detail__title"></h1>
+                    <div id="product-price" class="product-detail__price"></div>
+                    <p id="product-short-description" class="product-detail__description"></p>
+
+                    <div class="product-section" aria-label="Descrição completa">
+                        <h3 class="product-section__title">Descrição completa</h3>
+                        <div id="product-full-description" class="product-detail__fullDescription"></div>
+                        <button id="toggle-full-description" class="product-detail__toggleDesc" type="button" aria-expanded="false" hidden>Ver mais</button>
+                    </div>
+
+                    <div class="product-detail__buy" aria-label="Compra">
+                        <div class="product-detail__qtyRow">
+                            <label for="quantity" class="product-detail__label">Quantidade</label>
+                            <input type="number" id="quantity" class="product-detail__qty" min="1" value="1" />
+                        </div>
+                        <div class="product-detail__btnRow" aria-label="Ações de compra">
+                            <button id="buy-now-btn" class="btn-comprar" type="button">Comprar agora</button>
+                            <button id="add-to-cart-btn" class="btn-comprar" type="button">Adicionar ao carrinho</button>
+                        </div>
+                    </div>
+
+                    <p id="product-message" class="product-message" aria-live="polite"></p>
+                </div>
+
+                <div class="product-detail__specRow" aria-label="Informações do produto">
+                    <div class="product-section" aria-label="Especificações do jogo">
+                        <h3 class="product-section__title">Especificações do jogo</h3>
+                        <div id="game-specs" class="product-spec product-spec--inline"></div>
+                    </div>
+
+                    <div class="product-section" aria-label="Ficha técnica">
+                        <h3 class="product-section__title">Ficha técnica</h3>
+                        <div class="product-spec product-spec--inline">
+                            <div class="product-spec__row"><span>Categoria</span><strong id="product-category"></strong></div>
+                            <div class="product-spec__row"><span>Estoque disponível</span><strong id="product-stock"></strong></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="product-detail__tech" aria-label="Especificações técnicas do produto">
+                    <div class="product-section">
+                        <h3 class="product-section__title">Especificações técnicas do produto</h3>
+                        <div id="product-tech-specs" class="product-spec product-spec--inline"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- FOOTER (copiado exatamente de todos-os-jogos.html) -->
+        <script type="module" src="src/js/productPage.js"></script>
+    <div id="footer-container"></div>
+    <script>
+      fetch('src/components/footer.html')
+        .then(response => response.text())
+        .then(html => {
+          document.getElementById('footer-container').innerHTML = html;
+        });
+    </script>
+</body>
+</html>

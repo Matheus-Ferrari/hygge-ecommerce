@@ -178,8 +178,30 @@
   color: #000;
   transform: scale(1.05);
 }
+
+.btn-entrar:hover span,
+.btn-entrar:focus span,
+.btn-entrar:hover .btn-entrar__text,
+.btn-entrar:focus .btn-entrar__text {
+  color: #000;
+}
 .btn-entrar:hover svg, .btn-entrar:focus svg {
   stroke: #000;
+}
+
+/* Botão do header quando usuário está logado */
+.btn-entrar--user {
+  padding: 0 16px 0 12px;
+  max-width: 240px;
+}
+.btn-entrar--user .btn-entrar__text {
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.btn-entrar--user .btn-entrar__name {
+  font-weight: 800;
 }
 /*
   RIG E-commerce - style.css
@@ -378,7 +400,7 @@ body {
 }
 
 .search-btn {
-  right: 140px;
+  right: 160px;
   top: 50%;
   transform: translateY(-50%);
   width: 44px;
@@ -530,16 +552,16 @@ body {
   box-shadow: 0 40px 120px 0 rgba(0,0,0,0.16);
 }
 .produto-img {
-  width: 300px;
-  height: auto;
+  width: 100%;
+  height: 100%;
   position: relative;
   top: 0;
   left: 0;
   transform: none;
   z-index: 2;
-  border-radius: 18px;
+  border-radius: 32px;
   background: transparent;
-  object-fit: contain;
+  object-fit: cover;
   filter: none;
   transition: filter 0.4s, transform 0.4s;
 }
@@ -569,8 +591,9 @@ body {
     grid-template-columns: repeat(2, 1fr);
   }
   .produto-img {
-    width: 180px;
-    top: 24px;
+    width: 100%;
+    height: 100%;
+    top: 0;
   }
   .produto-nome {
     margin-top: 60px;
@@ -591,9 +614,10 @@ body {
     height: 110px;
   }
   .produto-img {
-    width: 100px;
+    width: 100%;
+    height: 100%;
     top: 0;
-    border-radius: 12px;
+    border-radius: 32px;
   }
   .produto-nome {
     margin-top: 36px;
@@ -629,18 +653,18 @@ body {
     padding: 40px 0 24px 0;
   }
   .produto-img {
-    width: 250px;
-    height: auto;
-    min-width: 250px;
-    max-width: none;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    max-width: 100%;
     position: relative;
     top: 0;
     left: 0;
     transform: none;
     z-index: 2;
-    border-radius: 18px;
+    border-radius: 32px;
     background: transparent;
-    object-fit: contain;
+    object-fit: cover;
     filter: drop-shadow(0 24px 48px rgba(0,0,0,0.13));
     transition: filter 0.4s, transform 0.4s;
   }

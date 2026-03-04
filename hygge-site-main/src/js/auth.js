@@ -1,7 +1,6 @@
 import { auth, db } from '../firebase/firebaseConfig.js';
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { registerUser } from "../firebase/userService.js";
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('register-form');
@@ -10,45 +9,54 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!form) return;
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    errorDiv.textContent = '';
+    if (errorDiv) errorDiv.textContent = '';
     if (successDiv) successDiv.textContent = '';
-    const name = form['name'].value.trim();
-    const email = form['email'].value.trim();
-    const password = form['password'].value;
-    const confirm = form['confirm'].value;
-    // Novos campos de endereço
-    const rua = form['rua']?.value.trim() || '';
-    const numero = form['numero']?.value.trim() || '';
-    const bairro = form['bairro']?.value.trim() || '';
-    const cidade = form['cidade']?.value.trim() || '';
-    const estado = form['estado']?.value.trim() || '';
-    const cep = form['cep']?.value.trim() || '';
-    if (!name || !email || !password || !confirm || !rua || !numero || !bairro || !cidade || !estado || !cep) {
-      errorDiv.textContent = 'Preencha todos os campos.';
+
+    const name = (form.elements.namedItem('name')?.value || '').trim();
+    const email = (form.elements.namedItem('email')?.value || '').trim();
+    const password = form.elements.namedItem('password')?.value || '';
+    const confirm = form.elements.namedItem('confirm')?.value || '';
+
+    if (!name || !email || !password || !confirm) {
+      if (errorDiv) errorDiv.textContent = 'Preencha todos os campos.';
       return;
     }
     if (password !== confirm) {
-      errorDiv.textContent = 'As senhas não coincidem.';
+      if (errorDiv) errorDiv.textContent = 'As senhas não coincidem.';
       return;
     }
-    const userData = {
-      name,
-      email,
-      endereco: {
-        rua,
-        numero,
-        bairro,
-        cidade,
-        estado,
-        cep
-      }
-    };
     try {
-      await registerUser(email, password, userData);
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+
+      // Opcional: definir displayName
+      try {
+        await updateProfile(cred.user, { displayName: name });
+      } catch {
+        // Não bloqueia o fluxo caso falhe.
+      }
+
+      // Opcional: criar/atualizar doc do usuário no Firestore
+      try {
+        await setDoc(
+          doc(db, 'users', cred.user.uid),
+          {
+            nome: name,
+            email,
+            data_cadastro: serverTimestamp(),
+            perfil_ativo: true,
+          },
+          { merge: true }
+        );
+      } catch {
+        // Firestore pode estar bloqueado por regras; não bloqueia o cadastro.
+      }
+
       if (successDiv) successDiv.textContent = 'Conta criada com sucesso!';
-      window.location.href = 'login.html';
+      setTimeout(() => {
+        window.location.href = 'login.html';
+      }, 700);
     } catch (error) {
-      errorDiv.textContent = error.message || 'Erro ao criar conta. Tente novamente.';
+      if (errorDiv) errorDiv.textContent = error?.message || 'Erro ao criar conta. Tente novamente.';
     }
   });
 });

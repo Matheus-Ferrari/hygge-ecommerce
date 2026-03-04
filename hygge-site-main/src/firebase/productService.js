@@ -1,30 +1,26 @@
-import { db } from "./firebaseConfig";
+import { db } from "./firebaseConfig"; 
 import { collection, getDocs } from "firebase/firestore";
 
-/**
- * Busca todos os produtos da coleção 'products' no Firestore.
- * * CAMPOS DISPONÍVEIS NO OBJETO RETORNADO:
- * - id: String (ID automático do Firebase)
- * - nome: String (ex: "Xadrez Viking")
- * - preco: Number (ex: 49.9)
- * - descricao: String (Texto detalhado sobre o jogo)
- * - estoque: Number (Quantidade disponível)
- * - categoria: String (ex: "tabuleiro")
- * - imagemUrl: String (Link da imagem no Storage)
- */
 export const getProducts = async () => {
   try {
-    // Referência para a coleção que você criou no console
     const productsCol = collection(db, "products"); 
-    
-    // Busca os documentos (fotos, preços, descrições)
     const productSnapshot = await getDocs(productsCol);
     
-    // Mapeia os dados para um formato que o front-end entenda facilmente
-    const productList = productSnapshot.docs.map(doc => ({
-      id: doc.id,         // O ID gerado pelo Firebase (ex: zsV46yz...)
-      ...doc.data()       // Espalha os campos: nome, preco, estoque, etc.
-    }));
+    const productList = productSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        nome: data.nome || "Produto sem nome",
+        preco: data.preco || 0,
+        // Se imagemCapa não existir, usa a primeira da galeria ou uma imagem padrão
+        imagemCapa: data.imagemCapa || (data.galeria && data.galeria[0]) || "caminho/para/placeholder.png",
+        // Garante que galeria sempre seja um array para não quebrar o código do parceiro
+        galeria: data.galeria || [], 
+        descricao: data.descricao || "",
+        estoque: data.estoque || 0,
+        categoria: data.categoria || "Geral"
+      };
+    });
     
     return productList;
   } catch (error) {
