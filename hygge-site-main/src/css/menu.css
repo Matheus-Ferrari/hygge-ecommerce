@@ -1,0 +1,127 @@
+body.menu-open .menu-btn {
+  display: none !important;
+}
+/* Menu Hambúrguer Global */
+.menu-hamburger {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  z-index: 1101;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  gap: 6px;
+}
+.menu-hamburger span {
+  display: block;
+  width: 28px;
+  height: 4px;
+  background: #005544;
+  border-radius: 2px;
+  transition: all 0.3s cubic-bezier(.4,2,.6,1);
+}
+.menu-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+    z-index: 99998;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s cubic-bezier(.4,2,.6,1);
+}
+.menu-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+.menu-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 80vw;
+  max-width: 400px;
+  background: #005544;
+    z-index: 99999;
+  transform: translateX(-100%);
+  transition: transform 0.35s cubic-bezier(.4,2,.6,1);
+  box-shadow: 2px 0 16px rgba(0,0,0,0.15);
+  display: flex;
+  flex-direction: column;
+  padding: 32px 24px 24px 24px;
+}
+.menu-sidebar.active {
+  transform: translateX(0);
+}
+.menu-close {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 2rem;
+  cursor: pointer;
+  z-index: 1;
+  transition: color 0.2s;
+}
+.menu-close:hover {
+  color: #ffb700;
+}
+.menu-list {
+  list-style: none;
+  padding: 0;
+  margin: 48px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.menu-list a {
+  color: #fff;
+  font-size: 1.25rem;
+  text-decoration: none;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: color 0.2s;
+}
+.menu-list a:hover {
+  color: #ffb700;
+}
+
+/* Esconde o botão hamburguer quando o menu está aberto */
+
+@media (min-width: 600px) {
+  .menu-sidebar {
+    width: 400px;
+  }
+}
+
+body.menu-open {
+  overflow: hidden;
+}
+
+/* Responsividade para mobile */
+@media (max-width: 599px) {
+  .menu-sidebar {
+    width: 80vw;
+    max-width: 100vw;
+    padding: 24px 12px 16px 12px;
+  }
+  .menu-list {
+    gap: 18px;
+    margin-top: 36px;
+  }
+  .menu-list a {
+    font-size: 1.1rem;
+  }
+  .menu-close {
+    font-size: 2rem;
+    top: 12px;
+    left: 12px;
+  }
+}
