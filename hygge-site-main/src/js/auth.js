@@ -1,6 +1,6 @@
 import { auth, db } from '../firebase/firebaseConfig.js';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, addDoc, collection } from 'firebase/firestore';
 
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('register-form');
@@ -47,8 +47,31 @@ document.addEventListener('DOMContentLoaded', () => {
           },
           { merge: true }
         );
-      } catch {
+      } catch (firestoreError) {
+        console.error('Erro ao salvar dados básicos do usuário:', firestoreError);
         // Firestore pode estar bloqueado por regras; não bloqueia o cadastro.
+      }
+
+      // Cria documento na coleção "mail" para disparo do e-mail de boas-vindas
+      try {
+        await addDoc(collection(db, 'mail'), {
+          to: email,
+          message: {
+            subject: 'Bem-vindo(a) à Hygge Games!',
+            html: `
+              <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+                <h2 style="color: #FF7A00;">Olá, ${name || 'cliente'}!</h2>
+                <p>Que alegria ter você na <strong>Hygge Games</strong>.</p>
+                <p>Sua conta foi criada com sucesso! Agora você já pode aproveitar nossos jogos de tabuleiro para se conectar de verdade com quem você ama.</p>
+                <br>
+                <p>Um abraço caloroso,<br><strong>Equipe Hygge Games</strong></p>
+              </div>
+            `,
+          },
+        });
+      } catch (mailError) {
+        console.error('Erro ao enfileirar e-mail de boas-vindas:', mailError);
+        // Falha no envio de e-mail não deve impedir o cadastro.
       }
 
       if (successDiv) successDiv.textContent = 'Conta criada com sucesso!';
@@ -56,6 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.href = 'login.html';
       }, 700);
     } catch (error) {
+      console.error('Erro ao criar usuário no Firebase Auth:', error);
       if (errorDiv) errorDiv.textContent = error?.message || 'Erro ao criar conta. Tente novamente.';
     }
   });

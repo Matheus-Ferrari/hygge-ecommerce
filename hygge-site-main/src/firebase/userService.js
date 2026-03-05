@@ -1,5 +1,5 @@
 import { db, auth } from "./firebaseConfig";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, collection, addDoc } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 
 /**
@@ -27,12 +27,14 @@ export const registerUser = async (email, password, userData) => {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
 
+    const userName = userData.name || userData.nome || "";
+
     // O parâmetro 'userData.endereco' deve conter as chaves citadas no comentário acima
     // para manter a consistência com o campo 'map' do banco
     await setDoc(doc(db, "users", user.uid), {
-      nome: userData.nome,
+      nome: userName,
       email: email,
-      telefone: userData.telefone,
+      telefone: userData.telefone || "",
       endereco: {
         rua: userData.endereco.rua,
         numero: userData.endereco.numero,
@@ -48,6 +50,23 @@ export const registerUser = async (email, password, userData) => {
       mercado_pago_customer_id: "", 
       cartao_salvo_id: "",
       cartao_resumo: ""
+    });
+
+    // Disparo do e-mail de boas-vindas via coleção "mail"
+    await addDoc(collection(db, "mail"), {
+      to: email,
+      message: {
+        subject: "Bem-vindo(a) à Hygge Games!",
+        html: `
+          <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+            <h2 style="color: #FF7A00;">Olá, ${userName || "cliente"}!</h2>
+            <p>Que alegria ter você na <strong>Hygge Games</strong>.</p>
+            <p>Sua conta foi criada com sucesso! Agora você já pode aproveitar nossos jogos de tabuleiro para se conectar de verdade com quem você ama.</p>
+            <br>
+            <p>Um abraço caloroso,<br><strong>Equipe Hygge Games</strong></p>
+          </div>
+        `
+      }
     });
 
     return { success: true, uid: user.uid };
