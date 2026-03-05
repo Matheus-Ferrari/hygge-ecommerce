@@ -219,6 +219,11 @@
   flex-wrap: wrap;
 }
 
+.profile-actions--logout {
+  justify-content: center;
+  margin-top: 26px;
+}
+
 .profile-actions .btn-comprar {
   margin: 0;
 }

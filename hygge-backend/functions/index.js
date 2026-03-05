@@ -6,6 +6,7 @@ const {MercadoPagoConfig, Preference, Payment} = require("mercadopago");
 const axios = require("axios");
 
 admin.initializeApp();
+const db = admin.firestore();
 
 /**
  * CONFIGURAÇÃO DE PARÂMETROS DE AMBIENTE
@@ -144,6 +145,89 @@ async function enviarParaBling(dadosPagamento) {
       logger.error("Falha na integração com o Bling:", err.message);
     }
   }
+
+/**
+ * 4. FUNÇÃO: Solicitar redefinição de senha
+ * Gera um link de redefinição via Firebase Auth Admin SDK
+ * e cria um documento na coleção "mail" com o template de e-mail.
+ */
+exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => {
+  // Cabeçalhos básicos de CORS para permitir chamadas do localhost e Hosting
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+
+  // Responde rapidamente às requisições de preflight
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+
+  if (req.method !== "POST") {
+    res.status(405).send("Método não permitido");
+    return;
+  }
+
+  try {
+    const {email} = req.body || {};
+    if (!email || typeof email !== "string") {
+      res.status(400).json({error: "E-mail é obrigatório"});
+      return;
+    }
+
+    let link;
+    try {
+      const actionCodeSettings = {
+        url: "https://e-commerce-hygge.firebaseapp.com/reset-password.html",
+        handleCodeInApp: true,
+      };
+      link = await admin.auth().generatePasswordResetLink(email, actionCodeSettings);
+    } catch (err) {
+      // Não revela se o usuário existe ou não.
+      logger.error("Erro ao gerar link de redefinição de senha:", err);
+      res.status(200).json({ok: true});
+      return;
+    }
+
+    let resetLink = "https://e-commerce-hygge.firebaseapp.com/reset-password.html";
+    try {
+      const urlObj = new URL(link);
+      const oobCode = urlObj.searchParams.get("oobCode");
+      if (oobCode) {
+        resetLink = `${resetLink}?oobCode=${encodeURIComponent(oobCode)}`;
+      }
+    } catch (err) {
+      logger.error("Não foi possível extrair o oobCode do link de redefinição:", err);
+    }
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+        <h2 style="color: #FF7A00;">Redefinir senha da sua conta Hygge Games</h2>
+        <p>Recebemos um pedido para redefinir a senha da sua conta.</p>
+        <p>Clique no botão abaixo para criar uma nova senha:</p>
+        <p style="text-align:center; margin: 24px 0;">
+          <a href="${resetLink}" style="display:inline-block;padding:12px 24px;background:#00966C;color:#fff;text-decoration:none;border-radius:999px;font-weight:bold;">Redefinir senha</a>
+        </p>
+        <p>Se você não fez esse pedido, pode ignorar este e-mail.</p>
+        <br>
+        <p>Um abraço caloroso,<br><strong>Equipe Hygge Games</strong></p>
+      </div>
+    `;
+
+    await db.collection("mail").add({
+      to: email,
+      message: {
+        subject: "Redefinir senha da sua conta Hygge Games",
+        html,
+      },
+    });
+
+    res.status(200).json({ok: true});
+  } catch (error) {
+    logger.error("Erro ao enfileirar e-mail de redefinição de senha:", error);
+    res.status(500).json({error: "Erro ao solicitar redefinição de senha"});
+  }
+});
 
 // firebase functions:config:set hygge.mp_key="SEU_TOKEN_MP"
 // firebase functions:config:set hygge.bling_key="SEU_TOKEN_BLING"

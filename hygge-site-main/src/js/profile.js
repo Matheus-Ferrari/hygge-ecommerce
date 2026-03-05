@@ -1,5 +1,5 @@
 import { auth, db } from '../firebase/firebaseConfig.js';
-import { onAuthStateChanged, updateProfile } from 'firebase/auth';
+import { onAuthStateChanged, updateProfile, signOut } from 'firebase/auth';
 import {
   collection,
   doc,
@@ -313,13 +313,30 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const logoutBtn = document.getElementById('logout-btn');
+
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
       showLoggedOutState();
+      if (logoutBtn) logoutBtn.style.display = 'none';
       return;
     }
 
     showLoggedInState();
+
+    if (logoutBtn) {
+      logoutBtn.style.display = '';
+      logoutBtn.onclick = async () => {
+        try {
+          await signOut(auth);
+          localStorage.removeItem(FAVORITES_KEY);
+          window.location.href = 'login.html';
+        } catch (err) {
+          console.error('Erro ao sair da conta:', err);
+          alert('Não foi possível sair agora. Tente novamente.');
+        }
+      };
+    }
 
     const data = await loadUserProfile(user);
 

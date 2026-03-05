@@ -1,6 +1,3 @@
-import { auth } from '../firebase/firebaseConfig.js';
-import { sendPasswordResetEmail } from 'firebase/auth';
-
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('forgot-form');
   const messageEl = document.getElementById('forgot-message');
@@ -22,9 +19,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      await sendPasswordResetEmail(auth, email);
+      const response = await fetch('https://us-central1-e-commerce-hygge.cloudfunctions.net/solicitarRedefinicaoSenha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      if (!response.ok) {
+        throw new Error('HTTP error');
+      }
+
       setMessage('Se o e-mail estiver cadastrado, você receberá um link para redefinir sua senha.', 'success');
-    } catch {
+    } catch (err) {
+      console.error('Erro ao solicitar redefinição de senha:', err);
       setMessage('Não foi possível enviar o email de recuperação.', 'error');
     }
   });
