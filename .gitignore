@@ -1,0 +1,18 @@
+# Pastas de dependências (Muito pesadas)
+node_modules/
+hygge-backend/functions/node_modules/
+
+# Arquivos de ambiente e chaves (SEGURANÇA!)
+.env
+.env.*
+.runtimeconfig.json
+params.json
+
+# Arquivos de log e temporários do Firebase
+firebase-debug.log*
+functions-debug.log*
+.firebase/
+
+# Pastas de build (Vite)
+dist/
+.vite/
