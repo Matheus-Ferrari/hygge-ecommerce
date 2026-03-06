@@ -130,11 +130,76 @@
 .header-actions {
   display: flex;
   align-items: center;
+  gap: 5px;
   position: absolute;
   right: 60px;
   top: 0;
   height: 100%;
   z-index: 10;
+}
+
+.cart-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  background: transparent;
+  border: 1px solid #fff;
+  border-radius: 50px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  margin-right: 0 !important;
+  margin-left: 0 !important;
+  position: relative;
+  z-index: 10001;
+  transition: background 0.25s, border 0.25s, color 0.25s, transform 0.25s;
+  box-shadow: 0 0 0 0 rgba(0,0,0,0.04);
+  outline: none;
+  cursor: pointer;
+}
+.cart-btn svg {
+  display: block;
+  margin: auto;
+  stroke: #fff;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  transition: stroke 0.25s;
+}
+.cart-btn:hover, .cart-btn:focus {
+  background: #fff;
+  border-color: #fff;
+  color: #008366;
+  transform: scale(1.05);
+}
+.cart-btn:hover svg, .cart-btn:focus svg {
+  stroke: #008366;
+}
+
+/* Quando existe botão de carrinho, evita sobreposição com a lupa */
+.header-actions .cart-btn + .search-btn {
+  position: static;
+  top: auto;
+  right: auto;
+  transform: none;
+  margin-left: 5px;
+}
+.header-actions .search-btn + .btn-entrar {
+  margin-left: 5px !important;
+}
+.header-actions .btn-entrar.btn-entrar--user {
+  margin-left: 8px !important;
+}
+.header-actions .cart-btn + .search-btn:hover,
+.header-actions .cart-btn + .search-btn:focus {
+  transform: scale(1.05);
+}
+@media (max-width: 900px) {
+  .cart-btn {
+    width: 40px;
+    height: 40px;
+  }
 }
 /* BOTÃO ENTRAR */
 
@@ -561,10 +626,16 @@ body {
   z-index: 2;
   border-radius: 32px;
   background: transparent;
-  object-fit: cover;
+  object-fit: contain; /* padrão: não expande */
   filter: none;
   transition: filter 0.4s, transform 0.4s;
 }
+
+/* Expansão só na página de produto */
+.product-page .product-detail__image {
+  object-fit: cover;
+}
+
 .produto-card:hover .produto-img,
 .produto-card:focus .produto-img {
   filter: none;
@@ -625,30 +696,87 @@ body {
 }
 @media (max-width: 600px) {
   .header {
-    height: 56px;
-    padding: 0 8px;
+    height: 64px;
+    padding: 0 10px;
   }
   .logo {
-    height: 40px;
+    height: 49px;
+    max-width: 86px;
   }
   .menu-btn {
-    left: 12px;
+    left: 8px;
     top: 50%;
     transform: translateY(-50%);
+    padding: 8px;
   }
-  .search-btn {
-    .menu-btn .hamburger {
-      display: block;
-      width: 28px;
-      height: 4px;
-      background: #222 !important;
-      border-radius: 2px;
-      margin: 0 auto;
-      transition: all 0.3s cubic-bezier(.4,2,.6,1);
-    }
-    top: 50%;
-    transform: translateY(-50%);
+
+  /* Header mobile: evita qualquer sobreposição entre carrinho/lupa/entrar */
+  .header-actions {
+    right: 8px;
+    gap: 5px;
+    max-width: calc(100vw - 115px);
   }
+
+  .header-actions .cart-btn,
+  .header-actions .search-btn {
+    position: static;
+    top: auto;
+    right: auto;
+    transform: none;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    padding: 0;
+  }
+
+  .header-actions .cart-btn svg,
+  .header-actions .search-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .header-actions .btn-entrar {
+    height: 36px;
+    padding: 0 10px 0 8px;
+    font-size: 0.88rem;
+    margin-left: 5px !important;
+    max-width: 118px;
+  }
+
+  .header-actions .btn-entrar svg {
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+  }
+
+  .header-actions .btn-entrar--user {
+    max-width: 104px;
+    width: 36px;
+    min-width: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .header-actions .btn-entrar--user svg {
+    margin-right: 0 !important;
+    margin-left: 0 !important;
+  }
+
+  .header-actions .btn-entrar--user .btn-entrar__name {
+    display: none;
+  }
+
+  .header-actions .btn-entrar--user .btn-entrar__greeting {
+    display: none;
+  }
+
+  .header-actions .btn-entrar--user .btn-entrar__text {
+    display: none;
+    max-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
   .produtos {
     padding: 40px 0 24px 0;
   }
@@ -664,17 +792,75 @@ body {
     z-index: 2;
     border-radius: 32px;
     background: transparent;
-    object-fit: cover;
-    filter: drop-shadow(0 24px 48px rgba(0,0,0,0.13));
+    object-fit: contain;
+    filter: none;
     transition: filter 0.4s, transform 0.4s;
   }
   .produto-card:hover .produto-img,
   .produto-card:focus .produto-img {
-    transform: translateY(-20px);
-    filter: drop-shadow(0 40px 80px rgba(0,0,0,0.18));
+    transform: none;
+    filter: none;
   }
   .produto-nome {
     margin-top: 18px;
+  }
+}
+
+/* Correções globais de imagens para mobile (sem afetar desktop) */
+@media (max-width: 768px) {
+  .produto-img-bg {
+    width: 100%;
+    max-width: 360px;
+    height: 170px;
+    border-radius: 24px;
+  }
+
+  .produto-img {
+    object-fit: contain;
+    border-radius: 24px;
+  }
+
+  .product-detail__imageWrap {
+    min-height: 260px;
+  }
+
+  .product-detail__image {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  /* Banners de login/cadastro/reset */
+  .hero > img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
+
+  /* Blocos com tamanho fixo da página de contato */
+  section[style*="width:1180px"] {
+    width: 92vw !important;
+    height: auto !important;
+    flex-direction: column !important;
+  }
+
+  section[style*="width:1180px"] > div[style*="width:590px"] {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 220px;
+  }
+
+  section[style*="width:1180px"] img {
+    width: 100% !important;
+    height: 240px !important;
+    object-fit: cover !important;
+  }
+
+  .split-section img,
+  .footer-logo img,
+  .login-logo img {
+    max-width: 100%;
+    height: auto;
   }
 }
 

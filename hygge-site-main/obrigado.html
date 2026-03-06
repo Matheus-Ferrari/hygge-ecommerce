@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pagamento aprovado | Hygge Games</title>
+  <meta name="description" content="Pagamento aprovado com sucesso na Hygge Games." />
+  <link rel="stylesheet" href="src/css/style.css" />
+  <link rel="stylesheet" href="src/css/footer.css" />
+  <link rel="icon" href="src/img/logo.png" type="image/png" />
+</head>
+<body>
+  <header id="main-header" class="header solid">
+    <button class="menu-btn" aria-label="Abrir menu">
+      <span class="hamburger"></span>
+      <span class="hamburger"></span>
+      <span class="hamburger"></span>
+    </button>
+    <a href="index.html" aria-label="Ir para a página inicial">
+      <img src="src/img/logo.png" alt="Logo Hygge Games" class="logo" />
+    </a>
+    <div class="header-actions">
+      <a href="carrinho.html" class="cart-btn" aria-label="Carrinho">
+        <svg width="22" height="22" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" style="display:block;"><circle cx="9" cy="21" r="1.5"/><circle cx="19" cy="21" r="1.5"/><path d="M5 6h2l1.68 9.39A2 2 0 0 0 10.65 17h6.7a2 2 0 0 0 1.97-1.61L21 8H7"/></svg>
+      </a>
+      <button class="search-btn" aria-label="Buscar">
+        <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+      <a href="login.html" class="btn-entrar" style="margin-left:5px;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;"><path d="M9 18l6-6-6-6"/><path d="M15 12H3"/><rect x="17" y="3" width="4" height="18" rx="2"/></svg>
+        <span>Entrar</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="container-large" style="padding:140px 0 70px 0; max-width:860px;">
+    <section class="produto-card" style="padding:30px; min-height:auto; border-radius:24px;">
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+        <span style="width:34px; height:34px; border-radius:50%; background:#008366; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:22px; font-weight:700;">✓</span>
+        <h1 class="section-title" style="margin:0; font-size:2rem;">Pagamento aprovado</h1>
+      </div>
+
+      <p style="font-size:1.1rem; margin:0 0 18px 0;">Seu pedido foi realizado com sucesso.</p>
+
+      <div id="order-summary" style="background:#f4f1ed; border-radius:16px; padding:14px 16px; margin-bottom:20px;">
+        <p style="margin:0;">Resumo do pedido indisponivel.</p>
+      </div>
+
+      <div style="display:flex; flex-wrap:wrap; gap:10px;">
+        <a href="perfil.html" class="btn-comprar" style="margin:0;">Ir para meus pedidos</a>
+        <a href="todos-os-jogos.html" class="btn-mostrar-jogos">Continuar comprando</a>
+      </div>
+    </section>
+  </main>
+
+  <div id="footer-container"></div>
+
+  <script>
+    (function () {
+      const summaryEl = document.getElementById('order-summary');
+      const raw = localStorage.getItem('last_order');
+
+      // Limpa o carrinho ao chegar na página de sucesso.
+      localStorage.removeItem('cart');
+      localStorage.removeItem('carrinho');
+
+      if (!raw || !summaryEl) return;
+
+      try {
+        const order = JSON.parse(raw);
+        const itens = Array.isArray(order?.itens) ? order.itens : [];
+        const subtotal = Number(order?.subtotal || 0);
+        const frete = Number(order?.frete || 0);
+        const total = Number(order?.total || 0);
+
+        const format = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+        summaryEl.innerHTML = `
+          <p style="margin:0 0 8px 0;"><strong>Itens:</strong> ${itens.length}</p>
+          <p style="margin:0 0 6px 0;">Subtotal: <strong>${format(subtotal)}</strong></p>
+          <p style="margin:0 0 6px 0;">Frete: <strong>${format(frete)}</strong></p>
+          <p style="margin:0;">Total: <strong>${format(total)}</strong></p>
+        `;
+      } catch {
+        // Mantem fallback padrao.
+      }
+    })();
+  </script>
+
+  <script>
+    fetch('src/components/footer.html')
+      .then((response) => response.text())
+      .then((html) => {
+        document.getElementById('footer-container').innerHTML = html;
+      });
+  </script>
+  <script src="src/js/menu.js"></script>
+  <script type="module" src="src/js/headerUser.js"></script>
+</body>
+</html>
