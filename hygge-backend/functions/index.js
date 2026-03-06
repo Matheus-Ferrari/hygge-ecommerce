@@ -42,7 +42,7 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
         currency_id: "BRL",
       })),
       back_urls: {
-        success: "https://e-commerce-hygge.firebaseapp.com/perfil.html",
+        success: "https://e-commerce-hygge.firebaseapp.com/obrigado.html",
         failure: "https://e-commerce-hygge.firebaseapp.com/carrinho.html",
         pending: "https://e-commerce-hygge.firebaseapp.com/pendente.html",
       },
