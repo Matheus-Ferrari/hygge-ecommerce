@@ -1,6 +1,7 @@
 import { db, auth } from "./firebaseConfig";
 import { doc, setDoc, getDoc, collection, addDoc } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
+import { generateEmailTemplate } from "./emailTemplates.js";
 
 /**
  * CAMPOS DISPONÍVEIS NO DOCUMENTO DO USUÁRIO (Firestore):
@@ -28,6 +29,8 @@ export const registerUser = async (email, password, userData) => {
     const user = userCredential.user;
 
     const userName = userData.name || userData.nome || "";
+
+    const storeLink = "https://e-commerce-hygge.firebaseapp.com/index.html";
 
     // O parâmetro 'userData.endereco' deve conter as chaves citadas no comentário acima
     // para manter a consistência com o campo 'map' do banco
@@ -57,15 +60,13 @@ export const registerUser = async (email, password, userData) => {
       to: email,
       message: {
         subject: "Bem-vindo(a) à Hygge Games!",
-        html: `
-          <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
-            <h2 style="color: #FF7A00;">Olá, ${userName || "cliente"}!</h2>
-            <p>Que alegria ter você na <strong>Hygge Games</strong>.</p>
-            <p>Sua conta foi criada com sucesso! Agora você já pode aproveitar nossos jogos de tabuleiro para se conectar de verdade com quem você ama.</p>
-            <br>
-            <p>Um abraço caloroso,<br><strong>Equipe Hygge Games</strong></p>
-          </div>
-        `
+        html: generateEmailTemplate({
+          title: "Bem-vindo à Hygge Games",
+          message: `Olá, ${userName || "cliente"}!\n\nQue alegria ter você aqui. Sua conta foi criada com sucesso — agora você já pode aproveitar nossos jogos para se conectar de verdade com quem você ama.`,
+          buttonText: "Visitar a loja",
+          buttonLink: storeLink,
+          footerText: "Hygge Games • Jogos para se conectar de verdade.",
+        })
       }
     });
 

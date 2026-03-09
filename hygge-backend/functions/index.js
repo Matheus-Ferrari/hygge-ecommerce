@@ -4,6 +4,255 @@ const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const {MercadoPagoConfig, Preference, Payment} = require("mercadopago");
 const axios = require("axios");
+const {generateEmailTemplate} = require("./emailTemplates.cjs");
+
+function formatBRL(value) {
+  const num = Number(value || 0);
+  return num.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderOrderItemsTable(items) {
+  const rows = (Array.isArray(items) ? items : []).map((item) => {
+    const nome = escapeHtml(item?.nome || item?.title || "Produto");
+    const qtd = Number(item?.quantidade ?? item?.quantity ?? 1);
+    const preco = Number(item?.preco ?? item?.unit_price ?? 0);
+    return `
+      <tr>
+        <td style="padding:10px 12px; border-bottom:1px solid #e2dcd6; font-family: Inter, Arial, sans-serif; font-size:14px; line-height:20px; color:#222;">${nome}</td>
+        <td align="center" style="padding:10px 12px; border-bottom:1px solid #e2dcd6; font-family: Inter, Arial, sans-serif; font-size:14px; line-height:20px; color:#222; white-space:nowrap;">${qtd}</td>
+        <td align="right" style="padding:10px 12px; border-bottom:1px solid #e2dcd6; font-family: Inter, Arial, sans-serif; font-size:14px; line-height:20px; color:#222; white-space:nowrap;">${formatBRL(preco)}</td>
+      </tr>`;
+  });
+
+  return `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; border:1px solid #e2dcd6; border-radius:14px; overflow:hidden; background:#ffffff;">
+      <tr>
+        <td style="padding:10px 12px; background:#f4f1ed; font-family: Inter, Arial, sans-serif; font-size:13px; line-height:18px; color:#111; font-weight:700;">Produto</td>
+        <td align="center" style="padding:10px 12px; background:#f4f1ed; font-family: Inter, Arial, sans-serif; font-size:13px; line-height:18px; color:#111; font-weight:700; white-space:nowrap;">Qtd</td>
+        <td align="right" style="padding:10px 12px; background:#f4f1ed; font-family: Inter, Arial, sans-serif; font-size:13px; line-height:18px; color:#111; font-weight:700; white-space:nowrap;">Preço</td>
+      </tr>
+      ${rows.join("\n")}
+    </table>`;
+}
+
+/**
+ * Enfileira e-mail de confirmação de pedido na coleção "mail".
+ * Uso esperado (exemplo): await sendOrderConfirmationEmail({ email, orderNumber, items, total, trackingUrl })
+ */
+async function sendOrderConfirmationEmail({
+  email,
+  orderNumber,
+  items,
+  total,
+  trackingUrl,
+} = {}) {
+  if (!email) return;
+
+  const safeOrderNumber = escapeHtml(orderNumber || "-");
+  const contentHtml = `
+    <div style="font-family: Inter, Arial, sans-serif; color:#222;">
+      <div style="margin:0 0 10px 0; font-size:14px; line-height:20px; color:#6e6e6e; text-align:center;">
+        Pedido: <strong style="color:#111;">${safeOrderNumber}</strong>
+      </div>
+      ${renderOrderItemsTable(items)}
+      <div style="height:14px; line-height:14px;">&nbsp;</div>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+        <tr>
+          <td style="font-family: Inter, Arial, sans-serif; font-size:14px; line-height:20px; color:#111; font-weight:700;">Total</td>
+          <td align="right" style="font-family: Inter, Arial, sans-serif; font-size:14px; line-height:20px; color:#111; font-weight:700; white-space:nowrap;">${formatBRL(total)}</td>
+        </tr>
+      </table>
+    </div>`;
+
+  const html = generateEmailTemplate({
+    title: "Pedido confirmado 🎲",
+    message: "Agradecemos por comprar na Hygge Games. Seu pedido foi recebido e está sendo preparado.",
+    buttonText: "Acompanhar pedido",
+    buttonLink: trackingUrl || "https://e-commerce-hygge.firebaseapp.com/perfil.html",
+    footerText: "Hygge Games • Obrigado por comprar com a gente.",
+    contentHtml,
+  });
+
+  await db.collection("mail").add({
+    to: email,
+    message: {
+      subject: "Pedido confirmado 🎲",
+      html,
+    },
+  });
+}
+
+function normalizeItemsForMatch(items) {
+  const list = Array.isArray(items) ? items : [];
+  return list
+    .map((item) => ({
+      id: String(item?.id ?? ""),
+      quantity: Number(item?.quantity ?? item?.quantidade ?? 0),
+      unit_price: Number(item?.unit_price ?? item?.preco ?? 0),
+    }))
+    .filter((x) => x.id && Number.isFinite(x.quantity) && x.quantity > 0);
+}
+
+function scoreDraftAgainstPayment(draft, paymentTotal, paymentItems) {
+  const draftTotal = Number(draft?.total ?? draft?.valor_total ?? 0);
+  const totalDiff = Math.abs(draftTotal - Number(paymentTotal || 0));
+
+  const draftItems = normalizeItemsForMatch(draft?.produtos || draft?.itens);
+  const payItems = normalizeItemsForMatch(paymentItems);
+
+  const draftMap = new Map(draftItems.map((i) => [i.id, i.quantity]));
+  const payMap = new Map(payItems.map((i) => [i.id, i.quantity]));
+
+  let mismatch = 0;
+  const allIds = new Set([...draftMap.keys(), ...payMap.keys()]);
+  for (const id of allIds) {
+    const a = draftMap.get(id) || 0;
+    const b = payMap.get(id) || 0;
+    mismatch += Math.abs(a - b);
+  }
+
+  return totalDiff * 1000 + mismatch;
+}
+
+async function findBestDraftForPayment({userId, paymentTotal, paymentItems}) {
+  if (!userId) return null;
+
+  try {
+    const snap = await db
+      .collection("orders_draft")
+      .where("userId", "==", userId)
+      .limit(20)
+      .get();
+
+    if (snap.empty) return null;
+
+    let best = null;
+    snap.docs.forEach((doc) => {
+      const data = doc.data() || {};
+      const score = scoreDraftAgainstPayment(data, paymentTotal, paymentItems);
+      if (!best || score < best.score) {
+        best = {id: doc.id, ref: doc.ref, data, score};
+      }
+    });
+
+    // Rejeita matches claramente ruins (ex.: total muito diferente)
+    if (best && best.score > 5000) return null;
+    return best;
+  } catch (err) {
+    logger.error("Falha ao buscar orders_draft para finalizar pedido:", err);
+    return null;
+  }
+}
+
+function mapItensFromDraftOrPayment(draft, paymentItems) {
+  const draftProdutos = Array.isArray(draft?.produtos) ? draft.produtos : null;
+  if (draftProdutos && draftProdutos.length) {
+    return draftProdutos.map((p) => ({
+      id_produto: String(p?.id ?? ""),
+      nome: String(p?.nome ?? "Produto"),
+      preco_unitario: Number(p?.preco ?? 0),
+      quantidade: Number(p?.quantidade ?? 1),
+    }));
+  }
+
+  const items = Array.isArray(paymentItems) ? paymentItems : [];
+  return items.map((i) => ({
+    id_produto: String(i?.id ?? ""),
+    nome: String(i?.title ?? "Produto"),
+    preco_unitario: Number(i?.unit_price ?? 0),
+    quantidade: Number(i?.quantity ?? 1),
+  }));
+}
+
+async function finalizeOrderInFirestore({
+  paymentId,
+  userId,
+  paymentDetails,
+  paymentItems,
+  paymentTotal,
+  payerEmail,
+}) {
+  if (!paymentId) return;
+  const orderRef = db.collection("orders").doc(String(paymentId));
+
+  const bestDraft = await findBestDraftForPayment({
+    userId,
+    paymentTotal,
+    paymentItems,
+  });
+
+  const metodo =
+    paymentDetails?.payment_method_id ||
+    paymentDetails?.payment_type_id ||
+    paymentDetails?.payment_method?.id ||
+    null;
+
+  const effectiveEmail = bestDraft?.data?.email || payerEmail || null;
+
+  await db.runTransaction(async (tx) => {
+    const existing = await tx.get(orderRef);
+    if (existing.exists) return;
+
+    const draft = bestDraft?.data || null;
+
+    tx.set(orderRef, {
+      userId: userId || "guest",
+      mercadopago_id: String(paymentId),
+      status_pagamento: "approved",
+      metodo_pagamento: metodo,
+      valor_total: Number(paymentTotal || 0),
+      data_pedido: admin.firestore.FieldValue.serverTimestamp(),
+      itens: mapItensFromDraftOrPayment(draft, paymentItems),
+      cliente: {
+        nome: draft?.nome || null,
+        email: effectiveEmail,
+        telefone: draft?.telefone || null,
+      },
+      entrega: {
+        endereco: draft?.endereco || null,
+        numero: draft?.numero || null,
+        complemento: draft?.complemento || null,
+        cidade: draft?.cidade || null,
+        estado: draft?.estado || null,
+        cep: draft?.cep || null,
+        metodoEntrega: draft?.metodoEntrega || null,
+      },
+      valores: {
+        subtotal: Number(draft?.subtotal ?? 0),
+        frete: Number(draft?.frete ?? 0),
+        cupom: draft?.cupom ?? null,
+        total: Number(paymentTotal || 0),
+      },
+    });
+  });
+
+  if (bestDraft?.ref) {
+    try {
+      await bestDraft.ref.set(
+        {
+          status_pagamento: "approved",
+          mercadopago_id: String(paymentId),
+          finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
+          finalizedOrderId: String(paymentId),
+        },
+        {merge: true},
+      );
+    } catch (err) {
+      logger.error("Falha ao marcar orders_draft como finalizado:", err);
+    }
+  }
+
+  return {email: effectiveEmail, draftId: bestDraft?.id || null};
+}
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -99,6 +348,82 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
       if (paymentDetails.status === "approved") {
         const uid = paymentDetails.external_reference;
         logger.info(`Pagamento aprovado para o UID: ${uid}`);
+
+        const paymentId = String(paymentDetails.id);
+        const payerEmail =
+          paymentDetails?.payer?.email ||
+          paymentDetails?.additional_info?.payer?.email ||
+          paymentDetails?.payer?.payer_email ||
+          null;
+
+        const items = paymentDetails?.additional_info?.items || [];
+        const total =
+          paymentDetails?.transaction_amount ??
+          items.reduce(
+            (acc, item) => acc + Number(item?.unit_price || 0) * Number(item?.quantity || 0),
+            0,
+          );
+
+        const finalized = await finalizeOrderInFirestore({
+          paymentId,
+          userId: uid || "guest",
+          paymentDetails,
+          paymentItems: items,
+          paymentTotal: total,
+          payerEmail,
+        });
+
+        const emailTo = payerEmail || finalized?.email || null;
+
+        const markerRef = db.collection("mp_payment_processed").doc(paymentId);
+        const shouldSendEmail = await db.runTransaction(async (tx) => {
+          const snap = await tx.get(markerRef);
+          const state = snap.exists ? snap.get("orderEmailState") : null;
+          if (state === "sent" || state === "processing") return false;
+
+          tx.set(
+            markerRef,
+            {
+              orderEmailState: "processing",
+              orderEmailPaymentId: paymentId,
+              orderEmailUid: uid || null,
+              orderEmailTo: emailTo,
+              orderEmailStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            {merge: true},
+          );
+          return true;
+        });
+
+        if (shouldSendEmail) {
+          try {
+            await sendOrderConfirmationEmail({
+              email: emailTo,
+              orderNumber: paymentId,
+              items,
+              total,
+              trackingUrl: "https://e-commerce-hygge.firebaseapp.com/perfil.html",
+            });
+
+            await markerRef.set(
+              {
+                orderEmailState: "sent",
+                orderEmailSentAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              {merge: true},
+            );
+          } catch (err) {
+            await markerRef.set(
+              {
+                orderEmailState: "error",
+                orderEmailErrorAt: admin.firestore.FieldValue.serverTimestamp(),
+                orderEmailErrorMessage: err?.message || String(err),
+              },
+              {merge: true},
+            );
+            throw err;
+          }
+        }
         await enviarParaBling(paymentDetails);
       }
     }
@@ -200,19 +525,13 @@ exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => 
       logger.error("Não foi possível extrair o oobCode do link de redefinição:", err);
     }
 
-    const html = `
-      <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
-        <h2 style="color: #FF7A00;">Redefinir senha da sua conta Hygge Games</h2>
-        <p>Recebemos um pedido para redefinir a senha da sua conta.</p>
-        <p>Clique no botão abaixo para criar uma nova senha:</p>
-        <p style="text-align:center; margin: 24px 0;">
-          <a href="${resetLink}" style="display:inline-block;padding:12px 24px;background:#00966C;color:#fff;text-decoration:none;border-radius:999px;font-weight:bold;">Redefinir senha</a>
-        </p>
-        <p>Se você não fez esse pedido, pode ignorar este e-mail.</p>
-        <br>
-        <p>Um abraço caloroso,<br><strong>Equipe Hygge Games</strong></p>
-      </div>
-    `;
+    const html = generateEmailTemplate({
+      title: "Recuperação de senha",
+      message: "Recebemos uma solicitação para redefinir sua senha. Clique no botão abaixo para continuar.",
+      buttonText: "Redefinir senha",
+      buttonLink: resetLink,
+      footerText: "Hygge Games • Se você não solicitou, ignore este e-mail.",
+    });
 
     await db.collection("mail").add({
       to: email,

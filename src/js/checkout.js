@@ -6,6 +6,7 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 const CART_KEY = 'cart';
 const CHECKOUT_DRAFT_KEY = 'checkout_draft';
 const CHECKOUT_CUSTOMER_KEY = 'checkout_customer';
+const CHECKOUT_CUSTOMER_DRAFT_KEY = 'checkout_customer_draft';
 
 const DELIVERY_OPTIONS = {
   padrao: { label: 'Entrega padrão', price: 11.9 },
@@ -19,6 +20,16 @@ let freteAtual = DELIVERY_OPTIONS.padrao.price;
 let cupomAplicado = null;
 let checkoutEmAndamento = false;
 let customerMode = 'edit';
+
+function getCustomerStorageKey(user) {
+  const owner = user?.uid ? String(user.uid) : 'guest';
+  return `${CHECKOUT_CUSTOMER_KEY}:${owner}`;
+}
+
+function getCustomerDraftStorageKey(user) {
+  const owner = user?.uid ? String(user.uid) : 'guest';
+  return `${CHECKOUT_CUSTOMER_DRAFT_KEY}:${owner}`;
+}
 
 function formatarPreco(valor) {
   return Number(valor || 0).toLocaleString('pt-BR', {
@@ -180,6 +191,28 @@ function getCustomerFormData() {
   };
 }
 
+function salvarRascunhoCliente() {
+  try {
+    const data = getCustomerFormData();
+    localStorage.setItem(
+      getCustomerDraftStorageKey(usuarioAtual),
+      JSON.stringify({ ...data, atualizadoEm: Date.now() })
+    );
+  } catch {
+    // Ignora falhas de storage.
+  }
+}
+
+function carregarRascunhoCliente() {
+  try {
+    const raw = localStorage.getItem(getCustomerDraftStorageKey(usuarioAtual));
+    const data = raw ? JSON.parse(raw) : null;
+    return data || null;
+  } catch {
+    return null;
+  }
+}
+
 function preencherFormularioCliente(data) {
   if (!data) return;
   const ids = ['nome', 'email', 'telefone', 'cep', 'endereco', 'numero', 'complemento', 'cidade', 'estado'];
@@ -235,7 +268,7 @@ function setCustomerMode(mode) {
 
 function carregarClienteSalvo() {
   try {
-    const raw = localStorage.getItem(CHECKOUT_CUSTOMER_KEY);
+    const raw = localStorage.getItem(getCustomerStorageKey(usuarioAtual));
     const data = raw ? JSON.parse(raw) : null;
     if (!data) return null;
     return data;
@@ -248,14 +281,35 @@ export function saveCustomerData() {
   const helper = document.getElementById('checkout-helper');
   if (helper) helper.textContent = '';
 
+  const form = document.getElementById('checkout-form');
+  if (form && typeof form.reportValidity === 'function' && !form.reportValidity()) {
+    salvarRascunhoCliente();
+    return null;
+  }
+
   const data = getCustomerFormData();
   const validation = validateCustomerData(data);
   if (!validation.ok) {
     if (helper) helper.textContent = validation.message;
+
+    salvarRascunhoCliente();
+
+    const campoAlvo =
+      validation.message?.includes('email') ? 'email' :
+      validation.message?.includes('CEP') ? 'cep' :
+      validation.message?.includes('telefone') ? 'telefone' :
+      'nome';
+
+    document.getElementById(campoAlvo)?.focus();
     return null;
   }
 
-  localStorage.setItem(CHECKOUT_CUSTOMER_KEY, JSON.stringify(data));
+  localStorage.setItem(getCustomerStorageKey(usuarioAtual), JSON.stringify(data));
+  try {
+    localStorage.removeItem(getCustomerDraftStorageKey(usuarioAtual));
+  } catch {
+    // ignore
+  }
   renderCustomerReadonly(data);
   setCustomerMode('view');
   return data;
@@ -364,9 +418,17 @@ function bindCustomerEvents() {
   const telefoneInput = document.getElementById('telefone');
   cepInput?.addEventListener('input', () => {
     cepInput.value = mascararCep(cepInput.value);
+    salvarRascunhoCliente();
   });
   telefoneInput?.addEventListener('input', () => {
     telefoneInput.value = mascararTelefone(telefoneInput.value);
+    salvarRascunhoCliente();
+  });
+
+  const ids = ['nome', 'email', 'telefone', 'cep', 'endereco', 'numero', 'complemento', 'cidade', 'estado'];
+  ids.forEach((id) => {
+    const input = document.getElementById(id);
+    input?.addEventListener('blur', salvarRascunhoCliente);
   });
 }
 
@@ -480,18 +542,46 @@ function initAuth() {
     usuarioAtual = user || null;
     atualizarCardLogin(user);
     preencherCamposUsuario(user);
+
+    // Agora que sabemos o usuário (ou guest), carregamos os dados do cliente
+    // sem risco de vazar informações entre contas.
+    initCustomerCard();
   });
 }
 
 function initCustomerCard() {
+  // Migração segura (legado): havia uma chave única "checkout_customer".
+  // Para evitar vazamento, só migra quando:
+  // - usuário não logado (guest), OU
+  // - email salvo bate com o email do usuário atual.
+  try {
+    const legacyRaw = localStorage.getItem(CHECKOUT_CUSTOMER_KEY);
+    if (legacyRaw) {
+      const legacy = JSON.parse(legacyRaw);
+      const legacyEmail = String(legacy?.email || '').trim().toLowerCase();
+      const userEmail = String(usuarioAtual?.email || '').trim().toLowerCase();
+      const canMigrate = !usuarioAtual || (legacyEmail && userEmail && legacyEmail === userEmail);
+      if (canMigrate && !localStorage.getItem(getCustomerStorageKey(usuarioAtual))) {
+        localStorage.setItem(getCustomerStorageKey(usuarioAtual), JSON.stringify(legacy));
+      }
+      // Remove sempre a chave antiga para não vazar entre usuários.
+      localStorage.removeItem(CHECKOUT_CUSTOMER_KEY);
+    }
+  } catch {
+    // ignore
+  }
+
   const savedCustomer = carregarClienteSalvo();
   if (savedCustomer) {
     preencherFormularioCliente(savedCustomer);
     renderCustomerReadonly(savedCustomer);
     setCustomerMode('view');
-  } else {
-    setCustomerMode('edit');
+    return;
   }
+
+  const draftCustomer = carregarRascunhoCliente();
+  if (draftCustomer) preencherFormularioCliente(draftCustomer);
+  setCustomerMode('edit');
 }
 
 function init() {
@@ -499,7 +589,6 @@ function init() {
   bindDeliveryEvents();
   carregarDraft();
   atualizarEstadoEntregaVisual();
-  initCustomerCard();
   bindCustomerEvents();
   bindCouponEvents();
   renderOrderSummary();

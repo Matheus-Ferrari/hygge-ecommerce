@@ -1,6 +1,7 @@
 import { auth, db } from '../firebase/firebaseConfig.js';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp, addDoc, collection } from 'firebase/firestore';
+import { generateEmailTemplate } from '../firebase/emailTemplates.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('register-form');
@@ -54,19 +55,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Cria documento na coleção "mail" para disparo do e-mail de boas-vindas
       try {
+        const storeLink = 'https://e-commerce-hygge.firebaseapp.com/index.html';
         await addDoc(collection(db, 'mail'), {
           to: email,
           message: {
             subject: 'Bem-vindo(a) à Hygge Games!',
-            html: `
-              <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
-                <h2 style="color: #FF7A00;">Olá, ${name || 'cliente'}!</h2>
-                <p>Que alegria ter você na <strong>Hygge Games</strong>.</p>
-                <p>Sua conta foi criada com sucesso! Agora você já pode aproveitar nossos jogos de tabuleiro para se conectar de verdade com quem você ama.</p>
-                <br>
-                <p>Um abraço caloroso,<br><strong>Equipe Hygge Games</strong></p>
-              </div>
-            `,
+            html: generateEmailTemplate({
+              title: 'Bem-vindo à Hygge Games',
+              message: `Olá, ${name || 'cliente'}!\n\nQue alegria ter você aqui. Sua conta foi criada com sucesso — agora você já pode aproveitar nossos jogos para se conectar de verdade com quem você ama.`,
+              buttonText: 'Visitar a loja',
+              buttonLink: storeLink,
+              footerText: 'Hygge Games • Jogos para se conectar de verdade.',
+            }),
           },
         });
       } catch (mailError) {

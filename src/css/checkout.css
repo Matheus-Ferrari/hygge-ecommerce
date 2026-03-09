@@ -1,22 +1,60 @@
 .cart-layout,
 .checkout-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
   gap: 24px;
   align-items: start;
+}
+
+/* Essas páginas usam <body class="product-page">, que no product.css adiciona
+   padding-bottom e pode criar um espaço bege abaixo do footer. */
+body.product-page {
+  padding-bottom: 0 !important;
+}
+
+/* Sticky footer (carrinho/checkout): garante que o rodapé seja o último
+   elemento visível, sem "vazio" abaixo quando a página é curta. */
+html,
+body {
+  height: 100%;
+}
+
+body.product-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+body.product-page > main {
+  flex: 1 0 auto;
+  min-height: 0 !important;
+}
+
+/* Footer é injetado dentro desse container */
+#footer-container {
+  margin-top: auto;
+}
+
+/* Carrinho: duas colunas proporcionais (produtos > resumo) */
+.cart-layout {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+
+/* Checkout: mantém a coluna de resumo fixa */
+.checkout-layout {
+  grid-template-columns: minmax(0, 1fr) 360px;
 }
 
 .cart-layout__left,
 .checkout-layout__left {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .cart-top-actions {
   display: flex;
   justify-content: center;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .cart-continue-btn {
@@ -25,35 +63,56 @@
   border-radius: 999px;
 }
 
-.cart-item-card {
-  min-height: auto !important;
-  height: auto;
-  margin: 0;
+/*
+  Carrinho: o item também usa .produto-card (do catálogo),
+  então precisamos sobrescrever o layout em coluna/altura fixa
+  apenas aqui.
+*/
+.cart-item-card,
+.cart-item-card.produto-card {
+  display: flex;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+
+  min-height: unset !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 14px 16px !important;
   border-radius: 20px;
   background: #fff;
-  display: flex;
-  align-items: flex-start;
-  gap: 20px;
-  padding: 12px 14px;
+  gap: 16px;
+  width: 100%;
+}
+
+/* Garante que o wrap não herde dimensões gigantes de .produto-img-bg */
+.cart-item-card__imageWrap,
+.cart-item-card__imageWrap.produto-img-bg {
+  width: 120px;
+  height: 120px;
+  border-radius: 16px;
+  flex: 0 0 120px;
+  margin: 0;
 }
 
 .cart-item-card__imageWrap {
-  width: 86px;
-  height: 86px;
-  border-radius: 14px;
-  flex: 0 0 86px;
+  order: 1;
 }
 
 .cart-item-card__image {
-  max-width: 70px;
-  max-height: 70px;
+  max-width: 110px;
+  max-height: 110px;
+  width: 100%;
+  height: auto;
   object-fit: contain;
 }
 
 .cart-item-card__info {
   flex: 1 1 auto;
-  min-width: 220px;
-  align-self: flex-start;
+  min-width: 0;
+  order: 2;
+  text-align: left;
 }
 
 .cart-item-card__title {
@@ -77,7 +136,7 @@
   overflow: hidden;
   background: #fff;
   flex: 0 0 auto;
-  align-self: flex-start;
+  order: 4;
 }
 
 .cart-item-card__qtyBtn {
@@ -100,12 +159,14 @@
 }
 
 .cart-item-card__price {
-  flex: 0 0 118px;
+  flex: 0 0 auto;
   text-align: right;
   font-family: var(--font-sans);
   font-weight: 700;
   font-size: 1rem;
-  align-self: flex-start;
+  white-space: nowrap;
+  margin-left: auto;
+  order: 3;
 }
 
 .cart-item-card__remove {
@@ -119,7 +180,8 @@
   background: #fff;
   cursor: pointer;
   transition: border-color 0.25s, transform 0.25s;
-  align-self: flex-start;
+  flex: 0 0 auto;
+  order: 5;
 }
 
 .checkout-form[hidden],
@@ -148,6 +210,12 @@
   margin: 0;
   border-radius: 20px;
   padding: 20px;
+}
+
+/* Carrinho: evita “altura de card” sobrando e cola no conteúdo */
+.cart-summary,
+.cart-coupon {
+  height: fit-content;
 }
 
 .cart-coupon__title,
@@ -469,17 +537,16 @@
 }
 
 @media (max-width: 780px) {
-  .cart-item-card {
-    display: grid;
-    grid-template-columns: 86px 1fr;
-    gap: 10px;
+  .cart-item-card,
+  .cart-item-card.produto-card {
+    gap: 12px;
   }
 
-  .cart-item-card__price,
-  .cart-item-card__remove,
-  .cart-item-card__qty {
-    grid-column: 2;
-    justify-self: start;
+  .cart-item-card__imageWrap,
+  .cart-item-card__imageWrap.produto-img-bg {
+    width: 96px;
+    height: 96px;
+    flex: 0 0 96px;
   }
 
   .checkout-form,
@@ -490,5 +557,17 @@
   .cart-coupon__row,
   .cart-summary__shippingRow {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  /* Em telas bem pequenas, permite quebrar sem virar coluna "gigante" */
+  .cart-item-card,
+  .cart-item-card.produto-card {
+    flex-wrap: wrap;
+  }
+
+  .cart-item-card__price {
+    margin-left: 0;
   }
 }
