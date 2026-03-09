@@ -43,7 +43,7 @@
       <p style="font-size:1.1rem; margin:0 0 18px 0;">Seu pedido foi realizado com sucesso.</p>
 
       <div id="order-summary" style="background:#f4f1ed; border-radius:16px; padding:14px 16px; margin-bottom:20px;">
-        <p style="margin:0;">Resumo do pedido indisponivel.</p>
+        <p style="margin:0;">Resumo do pedido indisponível.</p>
       </div>
 
       <div style="display:flex; flex-wrap:wrap; gap:10px;">
@@ -63,6 +63,7 @@
       // Limpa o carrinho ao chegar na página de sucesso.
       localStorage.removeItem('cart');
       localStorage.removeItem('carrinho');
+      localStorage.removeItem('checkout_draft');
 
       if (!raw || !summaryEl) return;
 
@@ -72,6 +73,7 @@
         const subtotal = Number(order?.subtotal || 0);
         const frete = Number(order?.frete || 0);
         const total = Number(order?.total || 0);
+        const metodoEntrega = String(order?.metodoEntrega || '').trim();
 
         const format = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -79,10 +81,11 @@
           <p style="margin:0 0 8px 0;"><strong>Itens:</strong> ${itens.length}</p>
           <p style="margin:0 0 6px 0;">Subtotal: <strong>${format(subtotal)}</strong></p>
           <p style="margin:0 0 6px 0;">Frete: <strong>${format(frete)}</strong></p>
+          ${metodoEntrega ? `<p style="margin:0 0 6px 0;">Entrega: <strong>${metodoEntrega === 'retirada' ? 'Retirada' : 'Padrão'}</strong></p>` : ''}
           <p style="margin:0;">Total: <strong>${format(total)}</strong></p>
         `;
       } catch {
-        // Mantem fallback padrao.
+        // Mantém fallback padrão.
       }
     })();
   </script>

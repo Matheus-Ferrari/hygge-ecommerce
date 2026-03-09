@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Checkout | Hygge Games</title>
+  <meta name="description" content="Finalize seu pedido na Hygge Games com segurança." />
+  <link rel="icon" href="src/img/logo.png" type="image/png" />
+  <link rel="stylesheet" href="src/css/style.css" />
+  <link rel="stylesheet" href="src/css/footer.css" />
+  <link rel="stylesheet" href="src/css/product.css" />
+  <link rel="stylesheet" href="src/css/checkout.css" />
+</head>
+<body class="product-page">
+  <header id="main-header" class="header solid" style="position:fixed; top:0; left:0; width:100vw; z-index:9999;">
+    <button class="menu-btn" aria-label="Abrir menu">
+      <span class="hamburger"></span>
+      <span class="hamburger"></span>
+      <span class="hamburger"></span>
+    </button>
+    <a href="index.html" aria-label="Ir para a página inicial">
+      <img src="src/img/logo.png" alt="Logo Hygge Games" class="logo" />
+    </a>
+    <div class="header-actions">
+      <a href="carrinho.html" class="cart-btn" aria-label="Carrinho">
+        <svg width="22" height="22" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" style="display:block;"><circle cx="9" cy="21" r="1.5"/><circle cx="19" cy="21" r="1.5"/><path d="M5 6h2l1.68 9.39A2 2 0 0 0 10.65 17h6.7a2 2 0 0 0 1.97-1.61L21 8H7"/></svg>
+      </a>
+      <button class="search-btn" aria-label="Buscar">
+        <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+      <a href="login.html" class="btn-entrar" style="margin-left:24px;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;"><path d="M9 18l6-6-6-6"/><path d="M15 12H3"/><rect x="17" y="3" width="4" height="18" rx="2"/></svg>
+        <span>Entrar</span>
+      </a>
+    </div>
+  </header>
+
+  <main style="min-height:calc(100vh - 105px - 220px); display:flex; flex-direction:column; justify-content:flex-start;">
+    <section class="container-large checkout-page" style="max-width: 1120px; margin: 0 auto; flex:1 0 auto;">
+      <h1 class="section-title" style="text-align:center; margin-bottom: 32px;">Checkout</h1>
+
+      <section class="checkout-layout" aria-label="Fluxo de checkout">
+        <div class="checkout-layout__left">
+          <article id="checkout-login-card" class="checkout-card produto-card">
+            <h2 class="checkout-card__title product-card__title">Login</h2>
+            <p id="checkout-login-message" class="checkout-login-msg">Tem uma conta? <a href="login.html">Faça login</a></p>
+          </article>
+
+          <article class="checkout-card produto-card" id="customer-card">
+            <div class="checkout-card__headerRow">
+              <h2 class="checkout-card__title product-card__title">Informações do cliente e da entrega</h2>
+              <button id="customer-edit-btn" class="btn-mostrar-jogos checkout-edit-btn" type="button" hidden>Editar</button>
+            </div>
+
+            <form id="checkout-form" class="checkout-form" novalidate>
+              <div class="checkout-field checkout-field--full">
+                <label for="nome">Nome completo</label>
+                <input id="nome" name="nome" type="text" autocomplete="name" required />
+              </div>
+              <div class="checkout-field">
+                <label for="email">Email</label>
+                <input id="email" name="email" type="email" autocomplete="email" required />
+              </div>
+              <div class="checkout-field">
+                <label for="telefone">Telefone</label>
+                <input id="telefone" name="telefone" type="tel" autocomplete="tel" required />
+              </div>
+              <div class="checkout-field">
+                <label for="cep">CEP</label>
+                <input id="cep" name="cep" type="text" inputmode="numeric" maxlength="9" autocomplete="postal-code" required />
+              </div>
+              <div class="checkout-field">
+                <label for="endereco">Endereço</label>
+                <input id="endereco" name="endereco" type="text" autocomplete="address-line1" required />
+              </div>
+              <div class="checkout-field">
+                <label for="numero">Número</label>
+                <input id="numero" name="numero" type="text" autocomplete="address-line2" required />
+              </div>
+              <div class="checkout-field">
+                <label for="complemento">Complemento</label>
+                <input id="complemento" name="complemento" type="text" autocomplete="address-line2" />
+              </div>
+              <div class="checkout-field">
+                <label for="cidade">Cidade</label>
+                <input id="cidade" name="cidade" type="text" autocomplete="address-level2" required />
+              </div>
+              <div class="checkout-field">
+                <label for="estado">Estado</label>
+                <input id="estado" name="estado" type="text" autocomplete="address-level1" required />
+              </div>
+            </form>
+
+            <div id="customer-readonly" class="checkout-readonly" hidden></div>
+
+            <div class="checkout-card__actions">
+              <button id="customer-save-btn" class="btn-comprar" type="button">Salvar dados</button>
+            </div>
+          </article>
+
+          <article class="checkout-card produto-card">
+            <h2 class="checkout-card__title product-card__title">Método de entrega</h2>
+            <div class="delivery-options" id="delivery-options">
+              <label class="delivery-card delivery-card--selected">
+                <input type="radio" name="delivery_method" value="padrao" checked />
+                <span class="delivery-card__title">Entrega padrão</span>
+                <span class="delivery-card__price">R$ 11,90</span>
+                <span class="delivery-card__subtitle">Mesmo dia</span>
+              </label>
+              <label class="delivery-card">
+                <input type="radio" name="delivery_method" value="grande_sp" />
+                <span class="delivery-card__title">Grande São Paulo</span>
+                <span class="delivery-card__price">R$ 15,90</span>
+                <span class="delivery-card__subtitle">Entrega expressa</span>
+              </label>
+            </div>
+          </article>
+        </div>
+
+        <aside class="checkout-summary produto-card" aria-label="Resumo do pedido">
+          <h2 class="checkout-summary__title product-card__title">Resumo do pedido</h2>
+          <div id="checkout-summary-items" class="checkout-summary-items"></div>
+
+          <div class="checkout-coupon">
+            <label for="checkout-coupon-input" class="cart-summary__label">Cupom promocional</label>
+            <div class="cart-coupon__row">
+              <input id="checkout-coupon-input" type="text" placeholder="Insira o código promocional" maxlength="24" />
+              <button id="checkout-coupon-apply" class="btn-comprar" type="button">Aplicar</button>
+            </div>
+            <div id="checkout-coupon-state"></div>
+          </div>
+
+          <div class="checkout-summary__line"><span>Subtotal</span><strong id="summary-subtotal">R$ 0,00</strong></div>
+          <div class="checkout-summary__line"><span>Frete</span><strong id="summary-frete">R$ 0,00</strong></div>
+          <div id="summary-discount-row" class="checkout-summary__line" hidden><span>Código promocional</span><strong id="summary-discount">- R$ 0,00</strong></div>
+          <div class="checkout-summary__line checkout-summary__line--total"><span>Total</span><strong id="summary-total">R$ 0,00</strong></div>
+          <p id="checkout-helper" class="checkout-helper"></p>
+          <button id="checkout-submit" class="btn-comprar checkout-submit" type="button">Continuar para pagamento</button>
+        </aside>
+      </section>
+    </section>
+  </main>
+
+  <div id="footer-container"></div>
+
+  <script type="module" src="src/js/checkout.js"></script>
+  <script>
+    fetch('src/components/footer.html')
+      .then((response) => response.text())
+      .then((html) => {
+        document.getElementById('footer-container').innerHTML = html;
+      });
+  </script>
+  <script src="src/js/menu.js"></script>
+  <script type="module" src="src/js/headerUser.js"></script>
+</body>
+</html>

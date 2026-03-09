@@ -1,12 +1,13 @@
-import { iniciarPagamentoMP, obterCalculoFrete } from './checkoutService.js';
-import { auth } from '../firebase/firebaseConfig.js';
-import { onAuthStateChanged } from 'firebase/auth';
-
-let usuarioId = null;
-let freteAtual = 0;
+import { obterCalculoFrete } from './checkoutService.js';
 
 const CART_KEY = 'cart';
 const LEGACY_CART_KEY = 'carrinho';
+const CHECKOUT_DRAFT_KEY = 'checkout_draft';
+
+let freteAtual = 0;
+let cupomAplicado = null;
+let cepAtual = '';
+let mensagemFrete = '';
 
 function formatarPreco(valor) {
   return Number(valor || 0).toLocaleString('pt-BR', {
@@ -15,10 +16,21 @@ function formatarPreco(valor) {
   });
 }
 
+function somenteDigitos(valor) {
+  return String(valor || '').replace(/\D/g, '');
+}
+
+function formatarCep(cep) {
+  const digits = somenteDigitos(cep).slice(0, 8);
+  if (digits.length <= 5) return digits;
+  return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+}
+
 function normalizarItem(item) {
   return {
     id: String(item?.id || ''),
     nome: String(item?.nome || 'Produto'),
+    descricao: String(item?.descricao || 'Jogo de cartas Hygge Games.'),
     preco: Number(item?.preco || 0),
     imagem: String(item?.imagem || 'src/img/logo.png'),
     quantidade: Math.max(1, Number(item?.quantidade || 1)),
@@ -31,7 +43,6 @@ function lerCarrinho() {
     const parsed = raw ? JSON.parse(raw) : null;
     if (Array.isArray(parsed)) return parsed.map(normalizarItem);
 
-    // Migra chave antiga para a nova apenas se necessário.
     const legacyRaw = localStorage.getItem(LEGACY_CART_KEY);
     const legacyParsed = legacyRaw ? JSON.parse(legacyRaw) : [];
     const migrated = Array.isArray(legacyParsed) ? legacyParsed.map(normalizarItem) : [];
@@ -47,6 +58,22 @@ function salvarCarrinho(itens) {
   localStorage.setItem(CART_KEY, JSON.stringify(itens.map(normalizarItem)));
 }
 
+function carregarEstadoDraft() {
+  try {
+    const raw = localStorage.getItem(CHECKOUT_DRAFT_KEY);
+    const draft = raw ? JSON.parse(raw) : null;
+    if (!draft) return;
+
+    freteAtual = Number(draft.frete || 0);
+    cupomAplicado = draft.cupom ? String(draft.cupom).toUpperCase() : null;
+    cepAtual = formatarCep(draft.cep || '');
+  } catch {
+    freteAtual = 0;
+    cupomAplicado = null;
+    cepAtual = '';
+  }
+}
+
 function removerItem(id) {
   const itens = lerCarrinho().filter((item) => item.id !== id);
   salvarCarrinho(itens);
@@ -55,30 +82,33 @@ function removerItem(id) {
 
 function atualizarQuantidade(id, quantidade) {
   const qtd = Math.max(1, Math.floor(Number(quantidade || 1)));
-  const itens = lerCarrinho().map((item) =>
-    item.id === id ? { ...item, quantidade: qtd } : item
-  );
+  const itens = lerCarrinho().map((item) => (item.id === id ? { ...item, quantidade: qtd } : item));
   salvarCarrinho(itens);
   renderCarrinho();
+}
+
+function alterarQuantidade(id, delta) {
+  const item = lerCarrinho().find((cartItem) => cartItem.id === id);
+  if (!item) return;
+  atualizarQuantidade(id, Number(item.quantidade || 1) + delta);
 }
 
 function calcularSubtotal(itens) {
   return itens.reduce((acc, item) => acc + item.preco * item.quantidade, 0);
 }
 
-function getAprovadoByQuery() {
-  const params = new URLSearchParams(window.location.search);
-  const status = (params.get('status') || params.get('collection_status') || '').toLowerCase();
-  return status === 'approved';
+function getCupomDesconto(subtotal) {
+  if (!cupomAplicado) return 0;
+  if (cupomAplicado === 'HYGGE10') return subtotal * 0.1;
+  return 0;
 }
 
 function renderCarrinhoVazio(container) {
   const wrapper = document.createElement('div');
-  wrapper.style.textAlign = 'center';
-  wrapper.style.padding = '56px 0';
+  wrapper.className = 'cart-empty';
 
   wrapper.innerHTML = `
-    <p style="font-size:1.3rem; font-weight:600; margin-bottom:24px;">Seu carrinho está vazio</p>
+    <p class="cart-empty__title">Seu carrinho está vazio</p>
     <a href="todos-os-jogos.html" class="btn-comprar" style="display:inline-block;">Ver produtos</a>
   `;
 
@@ -89,39 +119,42 @@ function criarItemCard(item) {
   const subtotal = item.preco * item.quantidade;
 
   const card = document.createElement('article');
-  card.className = 'produto-card';
-  card.style.padding = '18px';
-  card.style.margin = '0 0 16px 0';
-  card.style.minHeight = 'auto';
-  card.style.borderRadius = '20px';
-  card.style.background = '#fff';
-  card.style.display = 'grid';
-  card.style.gridTemplateColumns = '110px 1fr';
-  card.style.gap = '16px';
-  card.style.alignItems = 'center';
+  card.className = 'cart-item-card produto-card';
 
   card.innerHTML = `
-    <div class="produto-img-bg" style="width:110px; height:110px; border-radius:16px;">
-      <img src="${item.imagem}" alt="${item.nome}" class="produto-img" style="max-width:90px; max-height:90px; object-fit:contain;" />
+    <div class="cart-item-card__imageWrap produto-img-bg">
+      <img src="${item.imagem}" alt="${item.nome}" class="produto-img cart-item-card__image" />
     </div>
-    <div>
-      <h3 class="product-card__title" style="margin:0 0 8px 0; font-size:1.35rem;">${item.nome}</h3>
-      <p style="margin:0 0 8px 0; font-weight:600; color:#008366;">Preço: ${formatarPreco(item.preco)}</p>
-      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
-        <label for="qtd-${item.id}" style="font-weight:600;">Quantidade</label>
-        <input id="qtd-${item.id}" type="number" min="1" value="${item.quantidade}" style="width:68px; padding:6px 8px; border-radius:10px; border:1px solid #d3cec8;" />
-      </div>
-      <p style="margin:0 0 10px 0; font-weight:700;">Subtotal: ${formatarPreco(subtotal)}</p>
-      <button class="btn-comprar" type="button" style="background:#b71c1c; margin:0;">Remover</button>
+
+    <div class="cart-item-card__info">
+      <h3 class="product-card__title cart-item-card__title">${item.nome}</h3>
+      <p class="cart-item-card__description">${item.descricao}</p>
     </div>
+
+    <div class="cart-item-card__qty" aria-label="Controle de quantidade">
+      <button class="cart-item-card__qtyBtn" type="button" aria-label="Diminuir quantidade">-</button>
+      <span class="cart-item-card__qtyValue">${item.quantidade}</span>
+      <button class="cart-item-card__qtyBtn" type="button" aria-label="Aumentar quantidade">+</button>
+    </div>
+
+    <div class="cart-item-card__price">${formatarPreco(subtotal)}</div>
+
+    <button class="cart-item-card__remove" type="button" aria-label="Remover item">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 6h18" />
+        <path d="M8 6V4h8v2" />
+        <path d="M19 6l-1 14H6L5 6" />
+        <path d="M10 11v6" />
+        <path d="M14 11v6" />
+      </svg>
+    </button>
   `;
 
-  const qtdInput = card.querySelector('input[type="number"]');
-  const removerBtn = card.querySelector('button');
+  const qtyBtns = card.querySelectorAll('.cart-item-card__qtyBtn');
+  const removerBtn = card.querySelector('.cart-item-card__remove');
 
-  qtdInput?.addEventListener('change', (e) => {
-    atualizarQuantidade(item.id, e.target.value);
-  });
+  qtyBtns[0]?.addEventListener('click', () => alterarQuantidade(item.id, -1));
+  qtyBtns[1]?.addEventListener('click', () => alterarQuantidade(item.id, 1));
 
   removerBtn?.addEventListener('click', () => {
     removerItem(item.id);
@@ -131,72 +164,148 @@ function criarItemCard(item) {
 }
 
 async function calcularFretePorCep(cep, itens) {
-  const somenteDigitos = (cep || '').replace(/\D/g, '');
-  if (somenteDigitos.length !== 8) return;
+  const somente = somenteDigitos(cep);
+  if (somente.length !== 8) {
+    mensagemFrete = 'Informe um CEP válido com 8 dígitos.';
+    renderCarrinho();
+    return;
+  }
 
-  const resultado = await obterCalculoFrete(somenteDigitos, itens);
+  const resultado = await obterCalculoFrete(somente, itens);
   if (resultado?.erro) {
     freteAtual = 0;
-    renderCarrinho('Nao foi possivel calcular o frete agora.');
+    mensagemFrete = 'Não foi possível calcular o frete agora.';
+    renderCarrinho();
     return;
   }
 
   freteAtual = Number(resultado?.valor || 0);
+  mensagemFrete = `Frete calculado: ${formatarPreco(freteAtual)} (${resultado?.prazo || 'prazo indisponível'})`;
   renderCarrinho();
 }
 
-function renderResumo(container, itens, avisoFrete = '') {
+function salvarDraftCheckout(payload) {
+  localStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify(payload));
+}
+
+function renderCupom(listaColuna, subtotal) {
+  const cupomCard = document.createElement('div');
+  cupomCard.className = 'cart-coupon produto-card';
+
+  cupomCard.innerHTML = `
+    <h3 class="product-card__title cart-coupon__title">Cupom promocional</h3>
+    <div class="cart-coupon__row">
+      <input id="coupon-input" type="text" placeholder="Insira o código promocional" maxlength="24" />
+      <button id="coupon-apply" class="btn-comprar" type="button">Aplicar</button>
+    </div>
+    <p id="coupon-feedback" class="cart-coupon__feedback"></p>
+    <div id="coupon-applied"></div>
+  `;
+
+  const input = cupomCard.querySelector('#coupon-input');
+  const btn = cupomCard.querySelector('#coupon-apply');
+  const feedback = cupomCard.querySelector('#coupon-feedback');
+  const applied = cupomCard.querySelector('#coupon-applied');
+
+  if (input && cupomAplicado) input.value = cupomAplicado;
+
+  const desconto = getCupomDesconto(subtotal);
+  if (desconto > 0 && applied) {
+    applied.innerHTML = `
+      <div class="cart-coupon__applied">
+        <span>Cupom aplicado: ${cupomAplicado}</span>
+        <button class="cart-coupon__remove" type="button">Remover</button>
+      </div>
+    `;
+
+    const removerCupom = applied.querySelector('.cart-coupon__remove');
+    removerCupom?.addEventListener('click', () => {
+      cupomAplicado = null;
+      renderCarrinho();
+    });
+  }
+
+  btn?.addEventListener('click', () => {
+    const codigo = String(input?.value || '').trim().toUpperCase();
+
+    if (!codigo) {
+      cupomAplicado = null;
+      if (feedback) feedback.textContent = 'Informe um código para aplicar.';
+      renderCarrinho();
+      return;
+    }
+
+    if (codigo === 'HYGGE10') {
+      cupomAplicado = codigo;
+      if (feedback) feedback.textContent = 'Cupom aplicado: 10% de desconto.';
+    } else {
+      cupomAplicado = null;
+      if (feedback) feedback.textContent = 'Código inválido. Tente novamente.';
+    }
+
+    renderCarrinho();
+  });
+
+  listaColuna.appendChild(cupomCard);
+}
+
+function renderResumo(container, itens) {
   const subtotal = calcularSubtotal(itens);
-  const total = subtotal + freteAtual;
+  const desconto = getCupomDesconto(subtotal);
+  const total = Math.max(0, subtotal + freteAtual - desconto);
 
   const aside = document.createElement('aside');
-  aside.className = 'produto-card';
-  aside.style.padding = '24px';
-  aside.style.margin = '0';
-  aside.style.minHeight = 'auto';
-  aside.style.borderRadius = '20px';
-  aside.style.alignSelf = 'start';
+  aside.className = 'cart-summary produto-card';
 
   aside.innerHTML = `
-    <h3 class="product-card__title" style="margin:0 0 16px 0;">Resumo do Pedido</h3>
-    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span>Subtotal</span><strong>${formatarPreco(subtotal)}</strong></div>
-    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span>Frete</span><strong>${freteAtual ? formatarPreco(freteAtual) : '--'}</strong></div>
-    <div style="display:flex; justify-content:space-between; margin: 0 0 14px 0; font-size:1.15rem;"><span>Total</span><strong>${formatarPreco(total)}</strong></div>
-    <label for="cep-input" style="display:block; margin-bottom:6px; font-weight:600;">Digite seu CEP</label>
-    <input id="cep-input" type="text" maxlength="9" placeholder="00000-000" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid #d3cec8; margin-bottom:8px;" />
-    ${avisoFrete ? `<p style="margin:0 0 12px 0; color:#b71c1c; font-size:0.92rem;">${avisoFrete}</p>` : '<div style="height:10px;"></div>'}
-    <button id="btn-finalizar" class="btn-comprar" type="button" style="width:100%; margin:0;">Finalizar Compra</button>
+    <h3 class="product-card__title cart-summary__title">Resumo do pedido</h3>
+    <div class="cart-summary__line"><span>Subtotal</span><strong>${formatarPreco(subtotal)}</strong></div>
+    <div class="cart-summary__line"><span>Frete</span><strong>${freteAtual ? formatarPreco(freteAtual) : '--'}</strong></div>
+    <label for="cep-input" class="cart-summary__label">CEP</label>
+    <div class="cart-summary__shippingRow">
+      <input id="cep-input" type="text" maxlength="9" placeholder="00000-000" class="cart-summary__cep" value="${cepAtual}" />
+      <button id="btn-calcular-frete" class="btn-comprar" type="button">Calcular frete</button>
+    </div>
+    <p class="cart-summary__shippingResult">${mensagemFrete || ''}</p>
+    ${desconto > 0 ? `<div class="cart-summary__line"><span>Código promocional</span><strong>- ${formatarPreco(desconto)}</strong></div>` : ''}
+    <div class="cart-summary__line cart-summary__line--total"><span>Total final</span><strong>${formatarPreco(total)}</strong></div>
+    <button id="btn-finalizar" class="btn-comprar cart-summary__button" type="button">Finalizar compra</button>
   `;
 
   const cepInput = aside.querySelector('#cep-input');
+  const btnFrete = aside.querySelector('#btn-calcular-frete');
   const btnFinalizar = aside.querySelector('#btn-finalizar');
 
   cepInput?.addEventListener('input', () => {
-    const digits = (cepInput.value || '').replace(/\D/g, '');
-    if (digits.length === 8) {
-      calcularFretePorCep(cepInput.value, itens);
-    }
+    cepInput.value = formatarCep(cepInput.value);
+    cepAtual = cepInput.value;
   });
 
-  btnFinalizar?.addEventListener('click', async () => {
+  btnFrete?.addEventListener('click', async () => {
+    await calcularFretePorCep(cepInput?.value || '', itens);
+  });
+
+  btnFinalizar?.addEventListener('click', () => {
     if (!itens.length) return;
 
-    const pedidoAtual = {
+    salvarDraftCheckout({
       itens,
       subtotal,
       frete: freteAtual,
+      desconto,
       total,
+      cupom: cupomAplicado || null,
+      cep: cepAtual,
       criadoEm: Date.now(),
-    };
-    localStorage.setItem('last_order', JSON.stringify(pedidoAtual));
+    });
 
-    await iniciarPagamentoMP(itens, usuarioId || 'anonimo');
+    window.location.href = 'checkout.html';
   });
 
   container.appendChild(aside);
 }
 
-function renderCarrinho(avisoFrete = '') {
+function renderCarrinho() {
   const root = document.getElementById('cart-content');
   if (!root) return;
 
@@ -209,40 +318,28 @@ function renderCarrinho(avisoFrete = '') {
   }
 
   const layout = document.createElement('section');
-  layout.style.display = 'grid';
-  layout.style.gridTemplateColumns = 'minmax(0, 1fr) 340px';
-  layout.style.gap = '24px';
-  layout.style.alignItems = 'start';
+  layout.className = 'cart-layout';
 
-  const lista = document.createElement('div');
+  const listaColuna = document.createElement('div');
+  listaColuna.className = 'cart-layout__left';
+
+  const topActions = document.createElement('div');
+  topActions.className = 'cart-top-actions';
+  topActions.innerHTML = '<a href="index.html" class="btn-mostrar-jogos cart-continue-btn">Continuar navegando</a>';
+  listaColuna.appendChild(topActions);
+
   itens.forEach((item) => {
-    lista.appendChild(criarItemCard(item));
+    listaColuna.appendChild(criarItemCard(item));
   });
 
-  layout.appendChild(lista);
-  renderResumo(layout, itens, avisoFrete);
+  renderCupom(listaColuna, calcularSubtotal(itens));
+  layout.appendChild(listaColuna);
+  renderResumo(layout, itens);
 
   root.appendChild(layout);
-
-  // Responsividade simples sem CSS global novo.
-  if (window.innerWidth <= 900) {
-    layout.style.gridTemplateColumns = '1fr';
-  }
 }
 
-window.addEventListener('resize', () => {
-  renderCarrinho();
-});
-
 document.addEventListener('DOMContentLoaded', () => {
-  onAuthStateChanged(auth, (user) => {
-    usuarioId = user?.uid || null;
-  });
-
-  // Se voltar do MP com aprovado, mantém histórico local e limpa carrinho.
-  if (getAprovadoByQuery()) {
-    localStorage.removeItem(CART_KEY);
-  }
-
+  carregarEstadoDraft();
   renderCarrinho();
 });
