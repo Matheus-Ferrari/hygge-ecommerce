@@ -68,16 +68,15 @@
     </div>
   </section>
   <div id="footer-container"></div>
-  <script type="module" src="src/firebase/firebaseConfig.js"></script>
-    <script type="module" src="/src/js/auth.js"></script>
-    <script type="module" src="/src/js/script.js"></script>
+    <script type="module" src="src/js/auth.js"></script>
+    <script type="module" src="src/js/script.js"></script>
   <script>
-    fetch('src/components/footer.html')
+    fetch('/components/footer.html')
       .then(response => response.text())
       .then(html => {
         document.getElementById('footer-container').innerHTML = html;
       });
   </script>
-  <script src="src/js/menu.js"></script>
+  <script type="module" src="src/js/menu.js"></script>
 </body>
 </html>

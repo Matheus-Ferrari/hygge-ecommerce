@@ -83,12 +83,12 @@
         </section>
     </main>
     <div id="footer-container"></div>
-    <script src="src/js/menu.js"></script>
+    <script type="module" src="src/js/menu.js"></script>
     <script type="module" src="src/js/script.js"></script>
         <script type="module" src="src/js/headerUser.js"></script>
     <script>
       // Reutiliza footer
-      fetch('src/components/footer.html').then(res => res.text()).then(html => {
+      fetch('/components/footer.html').then(res => res.text()).then(html => {
         document.getElementById('footer-container').innerHTML = html;
       });
     </script>

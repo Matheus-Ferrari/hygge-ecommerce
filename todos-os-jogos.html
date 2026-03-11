@@ -32,8 +32,6 @@
         </div>
     </header>
     <section class="hero"></section>
-    <script src="src/js/menu.js"></script>
-    <script src="src/js/cartBadge.js"></script>
         <section style="background:#f8f6f3;padding:95px 0;">
             <div class="container-large" style="text-align:center;">
                 <h2 class="section-title" style="font-family:'Playfair Display', serif; font-weight:700; font-size:54px; line-height:62px; color:#000; margin-bottom:32px;">Por que nossos jogos são tão populares?</h2>
@@ -117,12 +115,12 @@
         </section>
     </main>
     <div id="footer-container"></div>
-    <script src="src/js/menu.js"></script>
+    <script type="module" src="src/js/menu.js"></script>
     <script type="module" src="src/js/script.js"></script>
         <script type="module" src="src/js/todosJogos.js"></script>
         <script type="module" src="src/js/headerUser.js"></script>
     <script>
-      fetch('src/components/footer.html')
+      fetch('/components/footer.html')
         .then(response => response.text())
         .then(html => {
           document.getElementById('footer-container').innerHTML = html;

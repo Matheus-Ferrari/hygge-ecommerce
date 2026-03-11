@@ -89,14 +89,14 @@
   </script>
 
   <script>
-    fetch('src/components/footer.html')
+      fetch('/components/footer.html')
       .then((response) => response.text())
       .then((html) => {
         document.getElementById('footer-container').innerHTML = html;
       });
   </script>
-  <script src="src/js/menu.js"></script>
-  <script src="src/js/cartBadge.js"></script>
+  <script type="module" src="src/js/menu.js"></script>
+  <script type="module" src="src/js/cartBadge.js"></script>
   <script type="module" src="src/js/headerUser.js"></script>
 </body>
 </html>

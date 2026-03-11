@@ -35,8 +35,8 @@
         </div>
     </header>
     <section class="hero"></section>
-    <script src="src/js/menu.js"></script>
-    <script src="src/js/cartBadge.js"></script>
+    <script type="module" src="src/js/menu.js"></script>
+    <script type="module" src="src/js/cartBadge.js"></script>
     <script type="module" src="src/js/headerUser.js"></script>
 
     <!-- CONTEÚDO DA PÁGINA DE PRODUTO -->
@@ -105,7 +105,7 @@
         <script type="module" src="src/js/productPage.js"></script>
     <div id="footer-container"></div>
     <script>
-      fetch('src/components/footer.html')
+      fetch('/components/footer.html')
         .then(response => response.text())
         .then(html => {
           document.getElementById('footer-container').innerHTML = html;

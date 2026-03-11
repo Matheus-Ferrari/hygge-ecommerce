@@ -175,12 +175,12 @@
 
   <div id="footer-container"></div>
 
-  <script src="src/js/menu.js"></script>
+  <script type="module" src="src/js/menu.js"></script>
   <script type="module" src="src/js/headerUser.js"></script>
   <script type="module" src="src/js/profile.js"></script>
   <script>
-    fetch('src/components/footer.html')
-  <script src="src/js/cartBadge.js"></script>
+      fetch('/components/footer.html')
+  <script type="module" src="src/js/cartBadge.js"></script>
       .then(response => response.text())
       .then(html => {
         document.getElementById('footer-container').innerHTML = html;

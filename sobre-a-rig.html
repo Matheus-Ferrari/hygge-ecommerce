@@ -104,11 +104,11 @@
     <a href="https://www.hyggegames.com/pt-br/seja-um-revendedor" style="display:inline-block;background:#00966C;color:#fff;font-size:1.4rem;font-weight:600;padding:18px 48px;border-radius:40px;text-decoration:none;transition:background 0.2s;">Seja um revendedor</a>
   </section>
   <div id="footer-container"></div>
-  <script src="src/js/menu.js"></script>
+    <script type="module" src="src/js/menu.js"></script>
   <script type="module" src="src/js/script.js"></script>
   <script type="module" src="src/js/headerUser.js"></script>
   <script>
-    fetch('src/components/footer.html')
+      fetch('/components/footer.html')
       .then(response => response.text())
       .then(html => {
         document.getElementById('footer-container').innerHTML = html;

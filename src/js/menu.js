@@ -1,8 +1,10 @@
 // Menu Hambúrguer Global
+import '../css/menu.css';
+
 (function() {
   // Carrega o HTML do menu e insere no topo do body
   function loadMenu() {
-    fetch('src/components/menu.html')
+    fetch('/components/menu.html')
       .then(res => res.text())
       .then(html => {
         const temp = document.createElement('div');
@@ -54,19 +56,8 @@
     });
   }
 
-  // Carrega CSS dinamicamente
-  function loadCSS() {
-    if (!document.querySelector('link[href*="src/css/menu.css"]')) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'src/css/menu.css';
-      document.head.appendChild(link);
-    }
-  }
-
   // Inicialização automática
   document.addEventListener('DOMContentLoaded', function() {
-    loadCSS();
     loadMenu();
   });
   // Header scroll effect
