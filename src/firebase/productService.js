@@ -8,15 +8,28 @@ export const getProducts = async () => {
     
     const productList = productSnapshot.docs.map(doc => {
       const data = doc.data();
+
+      const descricaoCompleta =
+        data.descricaoCompleta ??
+        data.descricao_completa ??
+        data.fullDescription ??
+        data.descricaoLonga ??
+        data.descricao_longa ??
+        [];
+
       return {
         id: doc.id,
         nome: data.nome || "Produto sem nome",
-        preco: data.preco || 0,
+        preco: 119,
         // Se imagemCapa não existir, usa a primeira da galeria ou uma imagem padrão
         imagemCapa: data.imagemCapa || (data.galeria && data.galeria[0]) || "caminho/para/placeholder.png",
+        // Compatibilidade com código antigo
+        imagemUrl: data.imagemCapa || (data.galeria && data.galeria[0]) || data.imagemUrl || "",
         // Garante que galeria sempre seja um array para não quebrar o código do parceiro
         galeria: data.galeria || [], 
         descricao: data.descricao || "",
+        descricaoCurta: data.descricaoCurta || data.descricao_curta || "",
+        descricaoCompleta,
         estoque: data.estoque || 0,
         categoria: data.categoria || "Geral"
       };

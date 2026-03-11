@@ -6,6 +6,17 @@ const {MercadoPagoConfig, Preference, Payment} = require("mercadopago");
 const axios = require("axios");
 const {generateEmailTemplate} = require("./emailTemplates.cjs");
 
+
+
+/**
+ * CONFIGURAÇÃO DE PARÂMETROS DE AMBIENTE
+ */
+const mpKeyParam = defineString("MP_KEY", {default: "TESTE"});
+const blingKeyParam = defineString("BLING_KEY", {default: "TESTE"});
+const melhorEnvioToken = defineString("MELHOR_ENVIO_TOKEN", {default: "TESTE"});
+
+// --- FUNÇÕES AUXILIARES DE FORMATAÇÃO E E-MAIL ---
+
 function formatBRL(value) {
   const num = Number(value || 0);
   return num.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
@@ -257,13 +268,6 @@ async function finalizeOrderInFirestore({
 admin.initializeApp();
 const db = admin.firestore();
 
-/**
- * CONFIGURAÇÃO DE PARÂMETROS DE AMBIENTE
- * O Firebase vai procurar por essas chaves no ambiente.
- */
-const mpKeyParam = defineString("MP_KEY", {default: "TESTE"});
-const blingKeyParam = defineString("BLING_KEY", {default: "TESTE"});
-
 // Inicializa o cliente do Mercado Pago usando .value()
 const mpClient = new MercadoPagoConfig({
   accessToken: mpKeyParam.value(),
@@ -308,29 +312,55 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
 });
 
 /**
- * 2. FUNÇÃO: Cálculo de Frete
+ * 2. FUNÇÃO: Cálculo de Frete (MELHOR ENVIO - CORREIOS & TOTAL EXPRESS)
  */
-exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
-  if (req.method !== "POST") {
-    res.status(405).send("Método não permitido");
-    return;
-  }
 
+exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
+  if (req.method !== "POST") return res.status(405).send("Método não permitido");
+  
   try {
     const {cepDestino, itens} = req.body;
-    logger.info(`Calculando frete para o destino: ${cepDestino}`);
+    
+    // Monta os dados para o Melhor Envio com base nos itens do carrinho
+    const payload = {
+      from: {postal_code: "01001000"}, // CEP de Origem da Hygge Games
+      to: {postal_code: cepDestino.replace(/\D/g, "")},
+      products: itens.map((item) => ({
+        id: item.id,
+        width: 20,
+        height: 10,
+        length: 20,
+        weight: 0.8, // Peso estimado por jogo
+        insurance_value: Number(item.preco),
+        quantity: item.quantidade,
+      })),
+    };
 
-    const qte = itens.reduce((acc, item) => acc + item.quantidade, 0);
-    const valorFrete = 15.00 + (qte * 2);
+    const response = await axios.post(
+      "https://melhorenvio.com.br/api/v2/me/shipment/calculate",
+      payload,
+      {
+        headers: {
+          "Accept": "application/json",
+          "Authorization": `Bearer ${melhorEnvioToken.value()}`, // Usa o novo parâmetro
+        },
+      }
+    );
 
-    res.json({
-      valor: valorFrete,
-      prazo: "5-8 dias úteis",
-      servico: "PAC",
-    });
+    // Filtra para retornar apenas PAC (ID 1) e Total Express (ID 3)
+    const opcoes = response.data
+      .filter((s) => s.id === 1 || s.id === 3)
+      .map((s) => ({
+        id: s.id,
+        nome: s.name,
+        valor: Number(s.price),
+        prazo: `${s.delivery_range.max} dias úteis`,
+      }));
+
+    res.json(opcoes);
   } catch (error) {
-    logger.error("Erro no cálculo de frete:", error);
-    res.status(500).json({error: "Erro ao processar frete"});
+    logger.error("Erro no cálculo de frete Melhor Envio:", error.message);
+    res.status(500).json({error: "Erro ao calcular frete oficial"});
   }
 });
 
@@ -435,7 +465,7 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
 });
 
 /**
- * FUNÇÃO AUXILIAR: Enviar Pedido ao Bling
+ * 4. Bling Auxiliar
  * @param {object} dadosPagamento - Objeto de dados vindo do Mercado Pago.
  */
 async function enviarParaBling(dadosPagamento) {
@@ -472,7 +502,7 @@ async function enviarParaBling(dadosPagamento) {
   }
 
 /**
- * 4. FUNÇÃO: Solicitar redefinição de senha
+ * 5. FUNÇÃO: Solicitar redefinição de senha
  * Gera um link de redefinição via Firebase Auth Admin SDK
  * e cria um documento na coleção "mail" com o template de e-mail.
  */

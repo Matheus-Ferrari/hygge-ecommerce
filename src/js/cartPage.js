@@ -8,6 +8,34 @@ let freteAtual = 0;
 let cupomAplicado = null;
 let cepAtual = '';
 let mensagemFrete = '';
+let freteOpcoes = [];
+let freteSelecionadoKey = '';
+
+function getFreteKey(opcao) {
+  const raw = opcao?.id ?? opcao?.nome ?? '';
+  return String(raw);
+}
+
+function normalizarOpcoesFrete(lista) {
+  const arr = Array.isArray(lista) ? lista : [];
+  return arr
+    .map((o) => ({
+      id: o?.id ?? o?.codigo ?? o?.serviceId ?? o?.nome,
+      nome: String(o?.nome || o?.servico || o?.service || 'Frete').trim(),
+      valor: Number(o?.valor ?? o?.price ?? 0),
+      prazo: String(o?.prazo || o?.deadline || '').trim(),
+    }))
+    .filter((o) => o.nome && Number.isFinite(o.valor) && o.valor >= 0);
+}
+
+function selecionarFrete(opcao) {
+  if (!opcao) return;
+  freteSelecionadoKey = getFreteKey(opcao);
+  freteAtual = Number(opcao.valor || 0);
+  mensagemFrete = opcao.prazo
+    ? `${opcao.nome}: ${formatarPreco(freteAtual)} (${opcao.prazo})`
+    : `${opcao.nome}: ${formatarPreco(freteAtual)}`;
+}
 
 function formatarPreco(valor) {
   return Number(valor || 0).toLocaleString('pt-BR', {
@@ -31,7 +59,7 @@ function normalizarItem(item) {
     id: String(item?.id || ''),
     nome: String(item?.nome || 'Produto'),
     descricao: String(item?.descricao || 'Jogo de cartas Hygge Games.'),
-    preco: Number(item?.preco || 0),
+    preco: 119,
     imagem: String(item?.imagem || 'src/img/logo.png'),
     quantidade: Math.max(1, Number(item?.quantidade || 1)),
   };
@@ -56,6 +84,7 @@ function lerCarrinho() {
 
 function salvarCarrinho(itens) {
   localStorage.setItem(CART_KEY, JSON.stringify(itens.map(normalizarItem)));
+  document.dispatchEvent(new CustomEvent('cart:updated'));
 }
 
 function carregarEstadoDraft() {
@@ -65,10 +94,12 @@ function carregarEstadoDraft() {
     if (!draft) return;
 
     freteAtual = Number(draft.frete || 0);
+    freteSelecionadoKey = String(draft.freteOpcaoId || draft.freteMetodo || draft.metodoEntrega || '');
     cupomAplicado = draft.cupom ? String(draft.cupom).toUpperCase() : null;
     cepAtual = formatarCep(draft.cep || '');
   } catch {
     freteAtual = 0;
+    freteSelecionadoKey = '';
     cupomAplicado = null;
     cepAtual = '';
   }
@@ -167,20 +198,35 @@ async function calcularFretePorCep(cep, itens) {
   const somente = somenteDigitos(cep);
   if (somente.length !== 8) {
     mensagemFrete = 'Informe um CEP válido com 8 dígitos.';
+    freteOpcoes = [];
     renderCarrinho();
     return;
   }
 
   const resultado = await obterCalculoFrete(somente, itens);
-  if (resultado?.erro) {
+  if (!Array.isArray(resultado)) {
     freteAtual = 0;
-    mensagemFrete = 'Não foi possível calcular o frete agora.';
+    freteOpcoes = [];
+    mensagemFrete = resultado?.mensagem || 'Não foi possível calcular o frete agora.';
     renderCarrinho();
     return;
   }
 
-  freteAtual = Number(resultado?.valor || 0);
-  mensagemFrete = `Frete calculado: ${formatarPreco(freteAtual)} (${resultado?.prazo || 'prazo indisponível'})`;
+  freteOpcoes = normalizarOpcoesFrete(resultado);
+
+  if (!freteOpcoes.length) {
+    freteAtual = 0;
+    mensagemFrete = 'Nenhuma opção de frete disponível para este CEP.';
+    renderCarrinho();
+    return;
+  }
+
+  const preferida = freteSelecionadoKey
+    ? freteOpcoes.find((o) => getFreteKey(o) === freteSelecionadoKey)
+    : null;
+  const maisBarata = freteOpcoes.reduce((best, cur) => (!best || cur.valor < best.valor ? cur : best), null);
+  selecionarFrete(preferida || maisBarata);
+
   renderCarrinho();
 }
 
@@ -254,6 +300,28 @@ function renderResumo(container, itens) {
   const desconto = getCupomDesconto(subtotal);
   const total = Math.max(0, subtotal + freteAtual - desconto);
 
+  const freteCardsHtml = freteOpcoes.length
+    ? `
+      <div class="delivery-options" id="cart-delivery-options" aria-label="Opções de frete">
+        ${freteOpcoes
+          .map((o) => {
+            const key = getFreteKey(o);
+            const checked = key && key === freteSelecionadoKey;
+            const subtitle = o.prazo ? o.prazo : 'Prazo indisponível';
+            return `
+              <label class="delivery-card${checked ? ' delivery-card--selected' : ''}">
+                <input type="radio" name="cart_delivery_method" value="${String(key).replace(/"/g, '&quot;')}" ${checked ? 'checked' : ''} />
+                <span class="delivery-card__title">${o.nome}</span>
+                <span class="delivery-card__price">${formatarPreco(o.valor)}</span>
+                <span class="delivery-card__subtitle">${subtitle}</span>
+              </label>
+            `.trim();
+          })
+          .join('')}
+      </div>
+    `
+    : '';
+
   const aside = document.createElement('aside');
   aside.className = 'cart-summary produto-card';
 
@@ -267,6 +335,7 @@ function renderResumo(container, itens) {
       <button id="btn-calcular-frete" class="btn-comprar" type="button">Calcular frete</button>
     </div>
     <p class="cart-summary__shippingResult">${mensagemFrete || ''}</p>
+    ${freteCardsHtml}
     ${desconto > 0 ? `<div class="cart-summary__line"><span>Código promocional</span><strong>- ${formatarPreco(desconto)}</strong></div>` : ''}
     <div class="cart-summary__line cart-summary__line--total"><span>Total final</span><strong>${formatarPreco(total)}</strong></div>
     <button id="btn-finalizar" class="btn-comprar cart-summary__button" type="button">Finalizar compra</button>
@@ -285,13 +354,29 @@ function renderResumo(container, itens) {
     await calcularFretePorCep(cepInput?.value || '', itens);
   });
 
+  const freteRadios = aside.querySelectorAll('input[name="cart_delivery_method"]');
+  freteRadios.forEach((radio) => {
+    radio.addEventListener('change', () => {
+      const key = String(radio.value || '');
+      const selected = freteOpcoes.find((o) => getFreteKey(o) === key);
+      if (!selected) return;
+      selecionarFrete(selected);
+      renderCarrinho();
+    });
+  });
+
   btnFinalizar?.addEventListener('click', () => {
     if (!itens.length) return;
+
+    const opcaoSelecionada = freteOpcoes.find((o) => getFreteKey(o) === freteSelecionadoKey) || null;
 
     salvarDraftCheckout({
       itens,
       subtotal,
       frete: freteAtual,
+      freteOpcaoId: opcaoSelecionada ? getFreteKey(opcaoSelecionada) : null,
+      freteMetodo: opcaoSelecionada?.nome || null,
+      fretePrazo: opcaoSelecionada?.prazo || null,
       desconto,
       total,
       cupom: cupomAplicado || null,

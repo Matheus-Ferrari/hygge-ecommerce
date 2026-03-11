@@ -37,26 +37,14 @@ async function getPreferredUserName(user) {
 
 function updateHeaderButtonLoggedOut(btn) {
   btn.classList.remove('btn-entrar--user');
-  btn.setAttribute('href', 'login.html');
+  const onCheckout = /\/checkout\.html$/i.test(window.location.pathname || '');
+  btn.setAttribute('href', onCheckout ? 'login.html?redirect=checkout' : 'login.html');
   btn.setAttribute('aria-label', 'Entrar');
-  btn.style.marginLeft = '9px';
+  btn.style.marginLeft = '';
   btn.innerHTML = `
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right:8px;"><path d="M9 18l6-6-6-6"/><path d="M15 12H3"/><rect x="17" y="3" width="4" height="18" rx="2"/></svg>
     <span>Entrar</span>
   `.trim();
-  // Ajusta espaçamentos quando existe botão de carrinho no header
-  const searchBtn = document.querySelector('.header .search-btn');
-  const cartBtn = document.querySelector('.header .cart-btn');
-  if (cartBtn) {
-    btn.style.marginLeft = '5px';
-  }
-  if (searchBtn) {
-    searchBtn.style.marginRight = '';
-    searchBtn.style.marginLeft = cartBtn ? '5px' : '10px';
-  }
-  if (cartBtn) {
-    cartBtn.style.marginLeft = '0';
-  }
 }
 
 function updateHeaderButtonLoggedIn(btn, name) {
@@ -64,21 +52,8 @@ function updateHeaderButtonLoggedIn(btn, name) {
   btn.classList.add('btn-entrar--user');
   btn.setAttribute('href', 'perfil.html');
   btn.setAttribute('aria-label', `Ir para o perfil: ${firstName}`);
-  btn.style.marginLeft = '24px'; // Mantém espaçamento original quando logado
+  btn.style.marginLeft = '';
   btn.innerHTML = buildUserButtonHtml(firstName);
-  // Restaura a lupa para a posição padrão quando logado
-  const searchBtn = document.querySelector('.header .search-btn');
-  const cartBtn = document.querySelector('.header .cart-btn');
-  if (cartBtn) {
-    btn.style.marginLeft = '8px';
-  }
-  if (searchBtn) {
-    searchBtn.style.marginRight = '';
-    searchBtn.style.marginLeft = cartBtn ? '5px' : '';
-  }
-  if (cartBtn) {
-    cartBtn.style.marginLeft = '0';
-  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

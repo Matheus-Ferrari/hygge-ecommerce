@@ -3,18 +3,18 @@
 // - URL: produto.html?id=slug-do-produto (ex: acertei-na-mosca)
 // - Tentar Firebase (quando possível) e, se não encontrar, usar dados locais:
 //   - Imagens e descrições existentes em todos-os-jogos.html
-// - Preço base fixo: R$ 109,90
+// - Preço base fixo: R$ 119,00
 // - Atualizar valor total conforme quantidade
 // - Carrinho no localStorage:
 //   cart = [{ id, nome, preco, quantidade, imagem }]
 
-const BASE_PRICE = 109.9;
+const BASE_PRICE = 119;
 
 const OFFICIAL_PRODUCTS = {
   'acertei-na-mosca': {
     title: 'Jogo Acertei na Mosca? | Hygge Games',
     metaDescription:
-      'Acertei na Mosca? é um jogo de curiosidades divertido e relaxante com mais de 400 perguntas. Compre agora por R$ 109,90.',
+      'Acertei na Mosca? é um jogo de curiosidades divertido e relaxante com mais de 400 perguntas. Compre agora por R$ 119,00.',
     h1: 'Acertei na Mosca?',
     shortDescription: 'O jogo de curiosidades divertido e relaxante em que o chute mais certeiro vence!',
     fullDescription: [
@@ -42,7 +42,7 @@ const OFFICIAL_PRODUCTS = {
   'vacilou-dancou': {
     title: 'Jogo Vacilou, Dançou! | Hygge Games',
     metaDescription:
-      'Vacilou, Dançou! é um jogo de curiosidades com desafios de dança para dar uma segunda chance. Compre agora por R$ 109,90.',
+      'Vacilou, Dançou! é um jogo de curiosidades com desafios de dança para dar uma segunda chance. Compre agora por R$ 119,00.',
     h1: 'Vacilou, Dançou!',
     shortDescription:
       'Vacilou, Dançou! é um jogo de curiosidades viciante e divertido que dá uma segunda chance ao participante que vai ter que remexer o esqueleto!',
@@ -74,7 +74,7 @@ const OFFICIAL_PRODUCTS = {
   'coisas-que-nao-ensinam-na-escola': {
     title: 'Jogo Coisas que não ensinam na escola | Hygge Games',
     metaDescription:
-      'Coisas que não ensinam na escola™ é um jogo de curiosidades hilário e viciante com mais de 400 perguntas e respostas inusitadas. Compre por R$ 109,90.',
+      'Coisas que não ensinam na escola™ é um jogo de curiosidades hilário e viciante com mais de 400 perguntas e respostas inusitadas. Compre por R$ 119,00.',
     h1: 'Coisas que não ensinam na escola™',
     shortDescription: 'Uma mistura louca de fatos curiosos, perguntas aleatórias e conhecimento totalmente inútil!',
     fullDescription: [
@@ -102,7 +102,7 @@ const OFFICIAL_PRODUCTS = {
   'eu-deveria-saber-isso': {
     title: 'Jogo Eu deveria saber isso! | Hygge Games',
     metaDescription:
-      'Eu deveria saber isso!™ é um jogo de curiosidades com mais de 400 perguntas em que os pontos são subtraídos a cada resposta incorreta. Compre por R$ 109,90.',
+      'Eu deveria saber isso!™ é um jogo de curiosidades com mais de 400 perguntas em que os pontos são subtraídos a cada resposta incorreta. Compre por R$ 119,00.',
     h1: 'Eu deveria saber isso!™',
     shortDescription: 'Teste seu conhecimento sobre curiosidades do mundo e descubra o quanto você realmente sabe!',
     fullDescription: [
@@ -131,7 +131,7 @@ const OFFICIAL_PRODUCTS = {
   'hygge-game': {
     title: 'Jogo Hygge Game: Cartas para Conversas | Hygge Games',
     metaDescription:
-      'Reúna amigos e família com o Hygge Game. Mais de 300 perguntas para criar laços e momentos inesquecíveis. Compre agora por R$ 109,90.',
+      'Reúna amigos e família com o Hygge Game. Mais de 300 perguntas para criar laços e momentos inesquecíveis. Compre agora por R$ 119,00.',
     h1: 'Hygge Game™',
     shortDescription: 'Ideal para noites relaxantes, jantares e reuniões sociais.',
     fullDescription: [
@@ -158,7 +158,7 @@ const OFFICIAL_PRODUCTS = {
   'quem-na-roda': {
     title: 'Jogo Quem na Roda: Diversão entre Amigos | Hygge Games',
     metaDescription:
-      'Descubra o que seus amigos realmente pensam de você com Quem na Roda. Mais de 300 perguntas engraçadas. Garanta o seu por R$ 109,90.',
+      'Descubra o que seus amigos realmente pensam de você com Quem na Roda. Mais de 300 perguntas engraçadas. Garanta o seu por R$ 119,00.',
     h1: 'Quem na roda...?',
     shortDescription: 'Descubra o que seus amigos realmente pensam de você.',
     fullDescription: [
@@ -218,6 +218,54 @@ const setSeo = ({ title, metaDescription }) => {
 };
 
 const safeText = (value) => (value == null ? '' : String(value));
+
+const stripEspecificacoesFromText = (value) => {
+  let text = safeText(value);
+  if (!text) return '';
+
+  // Remove tudo a partir de "Especificações:" (inclusive) — pode vir em uma linha ou com quebras.
+  // Ex.: "... Especificações: 14+ anos | 2+ jogadores | 20–30 min."
+  // Ex.: "...\nEspecificações:\n14+ anos | 2+ jogadores | 20-30 min."
+  text = text.replace(/\s*especifica(?:ç|c)(?:o|õ)es\s*:\s*[\s\S]*$/i, '').trim();
+
+  return text;
+};
+
+const normalizeDescricaoCompleta = (value) => {
+  const stripSpecs = (text) => {
+    let val = stripEspecificacoesFromText(text).trim();
+    if (!val) return '';
+
+    // Remove um parágrafo inteiro de especificações (caso venha sozinho).
+    if (/^especifica(ç|c)\s*o?e?s\s*:\s*/i.test(val)) return '';
+
+    // Remove trecho inline do tipo "Especificações: 14+ anos | 2+ jogadores | 20-30 min."
+    val = val
+      .replace(
+        /\s*especifica(ç|c)\s*o?e?s\s*:\s*[^\n\r]*?(\d+\s*\+?\s*anos\s*\|\s*\d+\s*\+?\s*jogadores\s*\|\s*\d+\s*[–-]\s*\d+\s*min\.?[^\n\r]*)\s*/gi,
+        ' '
+      )
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    return val;
+  };
+
+  if (Array.isArray(value)) {
+    return value.map((p) => stripSpecs(p)).filter(Boolean);
+  }
+
+  const text = safeText(value).trim();
+  if (!text) return [];
+
+  // Divide por linhas em branco (parágrafos). Se não houver, mantém como 1 parágrafo.
+  const parts = text
+    .split(/\n\s*\n/g)
+    .map((p) => stripSpecs(p.replace(/\n+/g, ' ')))
+    .filter(Boolean);
+
+  return parts.length ? parts : [text];
+};
 
 const LOCAL_IMAGE_BY_SLUG = {
   'acertei-na-mosca': 'acerteinamosca.png',
@@ -416,7 +464,10 @@ const renderProduct = (product) => {
     });
   }
   if (nameEl) nameEl.textContent = safeText(product.nome);
-  if (shortDescEl) shortDescEl.textContent = safeText(product.descricaoCurta || product.descricao);
+  if (shortDescEl) {
+    const desc = stripEspecificacoesFromText(product.descricaoCurta || product.descricao);
+    shortDescEl.textContent = desc;
+  }
   if (categoryEl) categoryEl.textContent = safeText(product.categoria || '—');
 
   const estoqueNumber = Number(product.estoque);
@@ -436,7 +487,7 @@ const renderProduct = (product) => {
 
   if (fullDescEl) {
     fullDescEl.innerHTML = '';
-    const parts = Array.isArray(product.descricaoCompleta) ? product.descricaoCompleta : [];
+    const parts = normalizeDescricaoCompleta(product.descricaoCompleta);
     if (!parts.length) {
       const section = fullDescEl.closest('.product-section');
       if (section) section.style.display = 'none';
@@ -459,24 +510,41 @@ const renderProduct = (product) => {
         toggleFullDescBtn.hidden = true;
         toggleFullDescBtn.textContent = 'Ver mais';
         toggleFullDescBtn.setAttribute('aria-expanded', 'false');
+        const COLLAPSED_HEIGHT = 220;
+
+        // Força estado colapsado inicial (robusto mesmo se CSS falhar)
         fullDescEl.classList.add('is-collapsed');
+        fullDescEl.style.maxHeight = `${COLLAPSED_HEIGHT}px`;
+        fullDescEl.style.overflow = 'hidden';
 
         requestAnimationFrame(() => {
-          const needsToggle = fullDescEl.scrollHeight > fullDescEl.clientHeight + 1;
+          const expandedHeight = fullDescEl.scrollHeight;
+          const needsToggle = expandedHeight > COLLAPSED_HEIGHT + 1;
 
           if (!needsToggle) {
             fullDescEl.classList.remove('is-collapsed');
+            fullDescEl.style.maxHeight = '';
+            fullDescEl.style.overflow = '';
             toggleFullDescBtn.hidden = true;
             return;
           }
 
           toggleFullDescBtn.hidden = false;
+          let expanded = false;
           toggleFullDescBtn.onclick = () => {
-            const isExpanded = toggleFullDescBtn.getAttribute('aria-expanded') === 'true';
-            const nextExpanded = !isExpanded;
-            toggleFullDescBtn.setAttribute('aria-expanded', String(nextExpanded));
-            toggleFullDescBtn.textContent = nextExpanded ? 'Ver menos' : 'Ver mais';
-            fullDescEl.classList.toggle('is-collapsed', !nextExpanded);
+            expanded = !expanded;
+            toggleFullDescBtn.setAttribute('aria-expanded', String(expanded));
+            toggleFullDescBtn.textContent = expanded ? 'Ver menos' : 'Ver mais';
+
+            if (expanded) {
+              fullDescEl.classList.remove('is-collapsed');
+              fullDescEl.style.maxHeight = `${expandedHeight}px`;
+              fullDescEl.style.overflow = 'visible';
+            } else {
+              fullDescEl.classList.add('is-collapsed');
+              fullDescEl.style.maxHeight = `${COLLAPSED_HEIGHT}px`;
+              fullDescEl.style.overflow = 'hidden';
+            }
           };
         });
       }
@@ -533,6 +601,7 @@ const readCart = () => {
 
 const writeCart = (cart) => {
   localStorage.setItem('cart', JSON.stringify(cart));
+  document.dispatchEvent(new CustomEvent('cart:updated'));
 };
 
 const addToCart = (product, quantity) => {
@@ -585,15 +654,15 @@ const init = async () => {
   // 3) Monta o produto final priorizando:
   // - nome/descrição/imagem locais
   // - categoria/estoque do Firebase (se existir)
-  const nome = official?.h1 || local?.nome || fromFirebase?.nome;
-  const descricao = official?.shortDescription || local?.descricao || fromFirebase?.descricao;
+  const nome = fromFirebase?.nome || local?.nome || official?.h1;
+  const descricao = fromFirebase?.descricao || local?.descricao || '';
   const categoria = fromFirebase?.categoria;
   const estoque = fromFirebase?.estoque;
 
   // Sempre usar imagem local por slug como principal (sem placeholder)
   const imagem = getLocalImageBySlug(slug);
   const imagemFallback = local?.imagem;
-  const imagemFallback2 = fromFirebase?.imagemUrl;
+  const imagemFallback2 = fromFirebase?.imagemCapa || fromFirebase?.imagemUrl || (Array.isArray(fromFirebase?.galeria) ? fromFirebase.galeria[0] : '');
   const imagens = getGalleryImagesBySlug(slug);
 
   if (!nome || !descricao) {
@@ -605,8 +674,9 @@ const init = async () => {
     id: slug,
     nome,
     descricao,
-    descricaoCurta: official?.shortDescription,
-    descricaoCompleta: official?.fullDescription,
+    descricaoCurta: fromFirebase?.descricaoCurta || null,
+    // Importante: Descrição completa deve vir somente do banco
+    descricaoCompleta: fromFirebase?.descricaoCompleta,
     especificacoesJogo: official?.gameSpecs,
     especificacoesTecnicas: official?.techSpecs,
     categoria,

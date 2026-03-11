@@ -69,13 +69,18 @@
       document.addEventListener('DOMContentLoaded', () => {
         const form = document.querySelector('.login-form');
         if (!form) return;
+
+        const params = new URLSearchParams(window.location.search);
+        const redirect = String(params.get('redirect') || '').trim().toLowerCase();
+        const redirectTarget = redirect === 'checkout' ? 'checkout.html' : 'index.html';
+
         form.addEventListener('submit', async (e) => {
           e.preventDefault();
           const email = form.querySelector('input[type="text"]').value.trim();
           const password = form.querySelector('input[type="password"]').value;
           try {
             await signInWithEmailAndPassword(auth, email, password);
-            window.location.href = 'index.html';
+            window.location.href = redirectTarget;
           } catch (err) {
             alert('Erro ao fazer login: ' + (err.message || 'Verifique seu e-mail e senha.'));
           }
@@ -90,6 +95,7 @@
         });
     </script>
     <script src="src/js/menu.js"></script>
+    <script src="src/js/cartBadge.js"></script>
     <script type="module" src="src/js/headerUser.js"></script>
 </body>
 </html>

@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Playfair+Display:wght@600;700&family=Poppins:wght@300;400;600;700&display=swap');
+
 .preco-destaque {
   color: #c62828;
   font-size: 1.35rem;
@@ -130,12 +132,23 @@
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
   position: absolute;
   right: 60px;
   top: 0;
   height: 100%;
   z-index: 10;
+}
+
+/* Remove “ampulheta”/buscar do header (mantém só carrinho + login) */
+.header .search-btn,
+.header-actions .search-btn {
+  display: none !important;
+}
+
+/* Espaçamento do login controlado pelo gap, não por margens inline */
+.header-actions .btn-entrar {
+  margin-left: 0 !important;
 }
 
 .cart-btn {
@@ -157,6 +170,31 @@
   box-shadow: 0 0 0 0 rgba(0,0,0,0.04);
   outline: none;
   cursor: pointer;
+}
+
+/* Badge de quantidade do carrinho (usa data-count) */
+.cart-btn[data-count]::after {
+  content: attr(data-count);
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #c62828;
+  color: #fff;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+  border: 2px solid var(--verde-header);
+  box-sizing: border-box;
+}
+
+.cart-btn[data-count="0"]::after {
+  display: none;
 }
 .cart-btn svg {
   display: block;

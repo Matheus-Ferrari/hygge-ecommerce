@@ -3,14 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pagamento aprovado | Hygge Games</title>
-  <meta name="description" content="Pagamento aprovado com sucesso na Hygge Games." />
+  <title>Pagamento pendente | Hygge Games</title>
+  <meta name="description" content="Seu pagamento está pendente. Acompanhe o status do pedido na Hygge Games." />
+  <link rel="icon" href="src/img/logo.png" type="image/png" />
   <link rel="stylesheet" href="src/css/style.css" />
   <link rel="stylesheet" href="src/css/footer.css" />
-  <link rel="icon" href="src/img/logo.png" type="image/png" />
 </head>
 <body>
-  <header id="main-header" class="header solid">
+  <h1 class="sr-only">Pagamento pendente - Hygge Games</h1>
+
+  <header id="main-header" class="header solid" style="position:fixed; top:0; left:0; width:100vw; z-index:9999;">
     <button class="menu-btn" aria-label="Abrir menu">
       <span class="hamburger"></span>
       <span class="hamburger"></span>
@@ -33,23 +35,24 @@
     </div>
   </header>
 
-  <main class="container-large" style="padding:140px 0 70px 0; max-width:860px;">
-    <section class="produto-card" style="padding:30px; min-height:auto; border-radius:24px;">
-      <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
-        <span style="width:34px; height:34px; border-radius:50%; background:#008366; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:22px; font-weight:700;">✓</span>
-        <h1 class="section-title" style="margin:0; font-size:2rem;">Pagamento aprovado</h1>
-      </div>
+  <main style="padding-top:120px;">
+    <section class="container-large" style="max-width: 980px; margin: 0 auto;">
+      <section class="produto-card" style="padding: 22px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom: 8px;">
+          <h1 class="section-title" style="margin:0; font-size:2rem;">Pagamento pendente</h1>
+        </div>
 
-      <p style="font-size:1.1rem; margin:0 0 18px 0;">Seu pedido foi realizado com sucesso.</p>
+        <p style="font-size:1.1rem; margin:0 0 18px 0;">Seu pagamento ainda não foi confirmado. Assim que ele for aprovado, seu pedido aparecerá em <strong>Meus pedidos</strong>.</p>
 
-      <div id="order-summary" style="background:#f4f1ed; border-radius:16px; padding:14px 16px; margin-bottom:20px;">
-        <p style="margin:0;">Resumo do pedido indisponível.</p>
-      </div>
+        <div id="order-summary" style="background:#f4f1ed; border-radius:16px; padding:14px 16px; margin-bottom:20px;">
+          <p style="margin:0;">Resumo do pedido indisponível.</p>
+        </div>
 
-      <div style="display:flex; flex-wrap:wrap; gap:10px;">
-        <a href="perfil.html" class="btn-comprar" style="margin:0;">Ir para meus pedidos</a>
-        <a href="todos-os-jogos.html" class="btn-mostrar-jogos">Continuar comprando</a>
-      </div>
+        <div style="display:flex; flex-wrap:wrap; gap:10px;">
+          <a href="perfil.html" class="btn-comprar" style="margin:0;">Ir para meus pedidos</a>
+          <a href="todos-os-jogos.html" class="btn-mostrar-jogos">Continuar comprando</a>
+        </div>
+      </section>
     </section>
   </main>
 
@@ -59,12 +62,6 @@
     (function () {
       const summaryEl = document.getElementById('order-summary');
       const raw = localStorage.getItem('last_order');
-
-      // Limpa o carrinho ao chegar na página de sucesso.
-      localStorage.removeItem('cart');
-      localStorage.removeItem('carrinho');
-      localStorage.removeItem('checkout_draft');
-
       if (!raw || !summaryEl) return;
 
       try {
@@ -86,7 +83,7 @@
           <p style="margin:0;">Total: <strong>${format(total)}</strong></p>
         `;
       } catch {
-        // Mantém fallback padrão.
+        // Mantém fallback.
       }
     })();
   </script>
