@@ -323,14 +323,14 @@ exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
     
     // Monta os dados para o Melhor Envio com base nos itens do carrinho
     const payload = {
-      from: {postal_code: "01001000"}, // CEP de Origem da Hygge Games
+      from: {postal_code: "06790030"}, // CEP de Origem da Hygge Games
       to: {postal_code: cepDestino.replace(/\D/g, "")},
       products: itens.map((item) => ({
         id: item.id,
-        width: 20,
-        height: 10,
-        length: 20,
-        weight: 0.8, // Peso estimado por jogo
+        width: 15,
+        height: 6,
+        length: 15,
+        weight: 0.35, // Peso estimado por jogo
         insurance_value: Number(item.preco),
         quantity: item.quantidade,
       })),
