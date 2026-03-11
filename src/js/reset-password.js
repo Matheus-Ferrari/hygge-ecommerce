@@ -1,6 +1,28 @@
 import { auth } from '../firebase/firebaseConfig.js';
 import { verifyPasswordResetCode, confirmPasswordReset } from 'firebase/auth';
 
+const PASSWORD_MIN_LENGTH = 6;
+
+function avaliarForcaSenha(password) {
+  const senha = String(password || '');
+  const issues = [];
+
+  if (senha.length < PASSWORD_MIN_LENGTH) issues.push(`mínimo de ${PASSWORD_MIN_LENGTH} caracteres`);
+  if (!/[a-z]/.test(senha)) issues.push('1 letra minúscula');
+  if (!/[A-Z]/.test(senha)) issues.push('1 letra maiúscula');
+  if (!/\d/.test(senha)) issues.push('1 número');
+  if (!/[^A-Za-z0-9]/.test(senha)) issues.push('1 símbolo');
+
+  return {
+    ok: issues.length === 0,
+    issues,
+    message:
+      issues.length === 0
+        ? 'Senha forte.'
+        : `Senha fraca. Use: ${issues.join(', ')}.`,
+  };
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   const form = document.getElementById('reset-form');
   const messageEl = document.getElementById('reset-message');
@@ -30,6 +52,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
+  const passwordInput = form.elements.namedItem('password');
+  if (passwordInput && passwordInput instanceof HTMLInputElement) {
+    passwordInput.addEventListener('input', () => {
+      const val = passwordInput.value || '';
+      if (!val) {
+        setMessage('', 'success');
+        return;
+      }
+
+      const strength = avaliarForcaSenha(val);
+      if (strength.ok) {
+        setMessage('Senha forte.', 'success');
+      } else {
+        setMessage(strength.message, 'error');
+      }
+    });
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
@@ -42,6 +82,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (password !== confirm) {
       setMessage('As senhas não coincidem.', 'error');
+      return;
+    }
+
+    const strength = avaliarForcaSenha(password);
+    if (!strength.ok) {
+      setMessage(strength.message, 'error');
+      (form.elements.namedItem('password') instanceof HTMLElement ? form.elements.namedItem('password') : null)?.focus?.();
       return;
     }
 

@@ -3,11 +3,50 @@ import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp, addDoc, collection } from 'firebase/firestore';
 import { generateEmailTemplate } from '../firebase/emailTemplates.js';
 
+const PASSWORD_MIN_LENGTH = 6;
+
+function avaliarForcaSenha(password) {
+  const senha = String(password || '');
+  const issues = [];
+
+  if (senha.length < PASSWORD_MIN_LENGTH) issues.push(`mínimo de ${PASSWORD_MIN_LENGTH} caracteres`);
+  if (!/[a-z]/.test(senha)) issues.push('1 letra minúscula');
+  if (!/[A-Z]/.test(senha)) issues.push('1 letra maiúscula');
+  if (!/\d/.test(senha)) issues.push('1 número');
+  if (!/[^A-Za-z0-9]/.test(senha)) issues.push('1 símbolo');
+
+  return {
+    ok: issues.length === 0,
+    issues,
+    message:
+      issues.length === 0
+        ? 'Senha forte.'
+        : `Senha fraca. Use: ${issues.join(', ')}.`,
+  };
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('register-form');
   const errorDiv = document.getElementById('register-error');
   const successDiv = document.getElementById('register-success');
   if (!form) return;
+
+  const passwordInput = form.elements.namedItem('password');
+  if (passwordInput && passwordInput instanceof HTMLInputElement) {
+    passwordInput.addEventListener('input', () => {
+      if (!errorDiv) return;
+      const val = passwordInput.value || '';
+      if (!val) {
+        if (errorDiv.dataset.source === 'password-strength') errorDiv.textContent = '';
+        return;
+      }
+
+      const strength = avaliarForcaSenha(val);
+      errorDiv.dataset.source = 'password-strength';
+      errorDiv.textContent = strength.ok ? '' : strength.message;
+    });
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (errorDiv) errorDiv.textContent = '';
@@ -26,6 +65,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if (errorDiv) errorDiv.textContent = 'As senhas não coincidem.';
       return;
     }
+
+    const strength = avaliarForcaSenha(password);
+    if (!strength.ok) {
+      if (errorDiv) {
+        errorDiv.dataset.source = 'password-strength';
+        errorDiv.textContent = strength.message;
+      }
+      (form.elements.namedItem('password') instanceof HTMLElement ? form.elements.namedItem('password') : null)?.focus?.();
+      return;
+    }
+
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
 
@@ -80,7 +130,15 @@ document.addEventListener('DOMContentLoaded', () => {
       }, 700);
     } catch (error) {
       console.error('Erro ao criar usuário no Firebase Auth:', error);
-      if (errorDiv) errorDiv.textContent = error?.message || 'Erro ao criar conta. Tente novamente.';
+      if (errorDiv) {
+        const code = String(error?.code || '');
+        if (code === 'auth/weak-password') {
+          const strengthMsg = avaliarForcaSenha(password).message;
+          errorDiv.textContent = strengthMsg || 'Senha fraca. Use uma senha mais forte.';
+        } else {
+          errorDiv.textContent = error?.message || 'Erro ao criar conta. Tente novamente.';
+        }
+      }
     }
   });
 });
