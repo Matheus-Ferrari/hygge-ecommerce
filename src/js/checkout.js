@@ -1,25 +1,184 @@
 import { auth, db } from '../firebase/firebaseConfig.js';
-import { iniciarPagamentoMP } from './checkoutService.js';
+import { iniciarPagamentoMP, obterCalculoFrete } from './checkoutService.js';
 import { onAuthStateChanged } from 'firebase/auth';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 const CART_KEY = 'cart';
 const CHECKOUT_DRAFT_KEY = 'checkout_draft';
 const CHECKOUT_CUSTOMER_KEY = 'checkout_customer';
 const CHECKOUT_CUSTOMER_DRAFT_KEY = 'checkout_customer_draft';
-
-const DELIVERY_OPTIONS = {
-  padrao: { label: 'Entrega padrão', price: 11.9 },
-  grande_sp: { label: 'Grande São Paulo', price: 15.9 },
-};
+const CHECKOUT_OWNER_KEY = 'checkout_owner_id';
 
 let usuarioAtual = null;
 let carrinhoAtual = [];
 let subtotalAtual = 0;
-let freteAtual = DELIVERY_OPTIONS.padrao.price;
+let freteAtual = 0;
+let freteOpcoes = [];
+let freteSelecionadoKey = '';
+let fretePrazoSelecionado = '';
+let freteDebounceId = null;
 let cupomAplicado = null;
 let checkoutEmAndamento = false;
 let customerMode = 'edit';
+
+function mapUserDocToCustomerData(userDocData, user) {
+  const data = userDocData || {};
+  const endereco = data?.endereco || {};
+
+  const customerData = {
+    nome: String(data?.nome || user?.displayName || '').trim(),
+    email: String(data?.email || user?.email || '').trim(),
+    telefone: String(data?.telefone || '').trim(),
+    cep: String(endereco?.cep || '').trim(),
+    endereco: String(endereco?.rua || endereco?.endereco || '').trim(),
+    numero: String(endereco?.numero || '').trim(),
+    complemento: String(endereco?.complemento || '').trim(),
+    cidade: String(endereco?.cidade || '').trim(),
+    estado: String(endereco?.estado || '').trim(),
+  };
+
+  // Considera válido para preencher se tiver pelo menos algum campo útil.
+  const hasAny = Object.values(customerData).some((v) => String(v || '').trim());
+  return hasAny ? customerData : null;
+}
+
+async function carregarClienteSalvoFirestore(user) {
+  if (!user?.uid) return null;
+
+  try {
+    const snap = await getDoc(doc(db, 'users', user.uid));
+    if (!snap.exists()) return null;
+    return mapUserDocToCustomerData(snap.data(), user);
+  } catch {
+    return null;
+  }
+}
+
+async function salvarClienteNoFirestore(user, customerData) {
+  if (!user?.uid) return;
+
+  const payload = {
+    nome: customerData.nome,
+    email: customerData.email,
+    telefone: customerData.telefone,
+    endereco: {
+      cep: customerData.cep,
+      rua: customerData.endereco,
+      numero: customerData.numero,
+      complemento: customerData.complemento,
+      cidade: customerData.cidade,
+      estado: customerData.estado,
+    },
+    atualizado_em: serverTimestamp(),
+  };
+
+  await setDoc(doc(db, 'users', user.uid), payload, { merge: true });
+}
+
+function createRandomId() {
+  try {
+    // Preferível (moderno)
+    if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+      return globalThis.crypto.randomUUID();
+    }
+  } catch {
+    // ignore
+  }
+
+  // Fallback simples
+  return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function getCheckoutOwnerId() {
+  if (usuarioAtual?.uid) return String(usuarioAtual.uid);
+
+  try {
+    const existing = localStorage.getItem(CHECKOUT_OWNER_KEY);
+    if (existing) return String(existing);
+  } catch {
+    // ignore
+  }
+
+  const created = `guest_${createRandomId()}`;
+  try {
+    localStorage.setItem(CHECKOUT_OWNER_KEY, created);
+  } catch {
+    // ignore
+  }
+  return created;
+}
+
+function getFreteKey(opcao) {
+  const raw = opcao?.id ?? opcao?.nome ?? '';
+  return String(raw);
+}
+
+function normalizarOpcoesFrete(lista) {
+  const arr = Array.isArray(lista) ? lista : [];
+  return arr
+    .map((o) => ({
+      id: o?.id ?? o?.codigo ?? o?.serviceId ?? o?.nome,
+      nome: String(o?.nome || o?.servico || o?.service || 'Frete').trim(),
+      valor: Number(o?.valor ?? o?.price ?? 0),
+      prazo: String(o?.prazo || o?.deadline || '').trim(),
+    }))
+    .filter((o) => o.nome && Number.isFinite(o.valor) && o.valor >= 0);
+}
+
+function getSelectedFreteOption() {
+  const key = getSelectedDeliveryMethod();
+  return freteOpcoes.find((o) => getFreteKey(o) === String(key || '')) || null;
+}
+
+function selecionarFrete(opcao) {
+  if (!opcao) return;
+  freteSelecionadoKey = getFreteKey(opcao);
+  freteAtual = Number(opcao.valor || 0);
+  fretePrazoSelecionado = String(opcao.prazo || '').trim();
+}
+
+function renderDeliveryMessage(message) {
+  const container = document.getElementById('delivery-options');
+  if (!container) return;
+  const text = String(message || '').trim();
+  container.innerHTML = text
+    ? `<div class="checkout-helper" style="grid-column:1/-1;">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`
+    : '';
+}
+
+function renderDeliveryOptions() {
+  const container = document.getElementById('delivery-options');
+  if (!container) return;
+
+  if (!freteOpcoes.length) {
+    renderDeliveryMessage('Informe um CEP válido para calcular o frete.');
+    return;
+  }
+
+  const selectedKey = freteSelecionadoKey;
+
+  container.innerHTML = freteOpcoes
+    .map((o, index) => {
+      const key = getFreteKey(o);
+      const checked = selectedKey ? key === selectedKey : index === 0;
+      const subtitle = o.prazo ? o.prazo : 'Prazo indisponível';
+      return `
+        <label class="delivery-card${checked ? ' delivery-card--selected' : ''}">
+          <input type="radio" name="delivery_method" value="${String(key).replace(/"/g, '&quot;')}" ${checked ? 'checked' : ''} />
+          <span class="delivery-card__title">${o.nome}</span>
+          <span class="delivery-card__price">${formatarPreco(o.valor)}</span>
+          <span class="delivery-card__subtitle">${subtitle}</span>
+        </label>
+      `.trim();
+    })
+    .join('');
+
+  // Se nada estava selecionado, fixa a primeira opção.
+  const first = freteOpcoes[0];
+  if (!freteSelecionadoKey && first) selecionarFrete(first);
+
+  atualizarEstadoEntregaVisual();
+}
 
 function getCustomerStorageKey(user) {
   const owner = user?.uid ? String(user.uid) : 'guest';
@@ -61,7 +220,7 @@ function normalizarItem(item) {
     id: String(item?.id || ''),
     nome: String(item?.nome || 'Produto'),
     descricao: String(item?.descricao || 'Jogo de cartas Hygge Games.'),
-    preco: Number(item?.preco || 0),
+    preco: 119,
     imagem: String(item?.imagem || 'src/img/logo.png'),
     quantidade: Math.max(1, Number(item?.quantidade || 1)),
   };
@@ -83,7 +242,7 @@ function getTotal() {
 
 function getSelectedDeliveryMethod() {
   const selected = document.querySelector('input[name="delivery_method"]:checked');
-  return selected?.value || 'padrao';
+  return selected?.value || '';
 }
 
 function atualizarEstadoEntregaVisual() {
@@ -124,11 +283,18 @@ function carregarDraft() {
     if (!draft) return;
 
     cupomAplicado = draft.cupom ? String(draft.cupom).toUpperCase() : null;
-    if (Number.isFinite(Number(draft.frete)) && Number(draft.frete) > 0) {
+    if (draft.freteOpcaoId || draft.freteMetodo || draft.metodoEntregaId || draft.metodoEntrega) {
+      freteSelecionadoKey = String(
+        draft.freteOpcaoId || draft.metodoEntregaId || draft.metodoEntrega || draft.freteMetodo || ''
+      );
+    }
+
+    if (Number.isFinite(Number(draft.frete)) && Number(draft.frete) >= 0) {
       freteAtual = Number(draft.frete);
-      const method = Number(draft.frete) >= DELIVERY_OPTIONS.grande_sp.price ? 'grande_sp' : 'padrao';
-      const radio = document.querySelector(`input[name="delivery_method"][value="${method}"]`);
-      if (radio) radio.checked = true;
+    }
+
+    if (draft.fretePrazo) {
+      fretePrazoSelecionado = String(draft.fretePrazo || '').trim();
     }
   } catch {
     cupomAplicado = null;
@@ -315,6 +481,48 @@ export function saveCustomerData() {
   return data;
 }
 
+async function upsertOrderDraft(customerData) {
+  const ownerId = getCheckoutOwnerId();
+  if (!ownerId) throw new Error('Identificador do checkout ausente.');
+
+  const selectedOption = getSelectedFreteOption();
+  const methodKey = getSelectedDeliveryMethod();
+  const methodName = selectedOption?.nome || null;
+  const now = serverTimestamp();
+
+  const payload = {
+    userId: ownerId,
+    nome: customerData.nome,
+    email: customerData.email,
+    telefone: customerData.telefone,
+    endereco: `${customerData.endereco}, ${customerData.numero}${customerData.complemento ? ` - ${customerData.complemento}` : ''}`,
+    numero: customerData.numero,
+    cidade: customerData.cidade,
+    estado: customerData.estado,
+    cep: customerData.cep,
+    produtos: carrinhoAtual,
+    subtotal: subtotalAtual,
+    frete: freteAtual,
+    freteOpcaoId: selectedOption ? getFreteKey(selectedOption) : (methodKey || null),
+    freteMetodo: methodName,
+    fretePrazo: selectedOption?.prazo || null,
+    cupom: cupomAplicado || null,
+    total: getTotal(),
+    complemento: customerData.complemento,
+    metodoEntrega: methodName || (methodKey || null),
+    updatedAt: now,
+  };
+
+  const ref = doc(db, 'orders_draft', String(ownerId));
+  const existing = await getDoc(ref);
+  if (!existing.exists()) {
+    payload.createdAt = now;
+  }
+
+  await setDoc(ref, payload, { merge: true });
+  return { id: ref.id, payload };
+}
+
 function atualizarCardLogin(user) {
   const loginCard = document.getElementById('checkout-login-card');
   if (!loginCard) return;
@@ -357,16 +565,88 @@ function renderCheckoutCouponState() {
   });
 }
 
+async function recalcularFreteCheckout() {
+  const cepInput = document.getElementById('cep');
+  const digits = somenteDigitos(cepInput?.value || '').slice(0, 8);
+
+  if (!carrinhoAtual.length) {
+    freteOpcoes = [];
+    freteAtual = 0;
+    renderDeliveryMessage('Seu carrinho está vazio.');
+    atualizarTotais();
+    return;
+  }
+
+  if (digits.length !== 8) {
+    freteOpcoes = [];
+    freteAtual = 0;
+    renderDeliveryMessage('Informe um CEP válido para calcular o frete.');
+    atualizarTotais();
+    return;
+  }
+
+  renderDeliveryMessage('Calculando frete...');
+  const resultado = await obterCalculoFrete(digits, carrinhoAtual);
+
+  if (!Array.isArray(resultado)) {
+    freteOpcoes = [];
+    freteAtual = 0;
+    renderDeliveryMessage(resultado?.mensagem || 'Não foi possível calcular o frete agora.');
+    atualizarTotais();
+    return;
+  }
+
+  freteOpcoes = normalizarOpcoesFrete(resultado);
+  if (!freteOpcoes.length) {
+    freteAtual = 0;
+    renderDeliveryMessage('Nenhuma opção de frete disponível para este CEP.');
+    atualizarTotais();
+    return;
+  }
+
+  let selected = freteSelecionadoKey
+    ? freteOpcoes.find((o) => getFreteKey(o) === freteSelecionadoKey)
+    : null;
+
+  if (!selected && Number.isFinite(freteAtual) && freteAtual > 0) {
+    selected = freteOpcoes.find((o) => Math.abs(Number(o.valor) - Number(freteAtual)) < 0.01) || null;
+  }
+
+  if (!selected) {
+    selected = freteOpcoes.reduce((best, cur) => (!best || cur.valor < best.valor ? cur : best), null);
+  }
+
+  selecionarFrete(selected || freteOpcoes[0]);
+  renderDeliveryOptions();
+  atualizarTotais();
+  renderCheckoutCouponState();
+}
+
+function agendarCalculoFrete(imediato = false) {
+  if (freteDebounceId) window.clearTimeout(freteDebounceId);
+  const wait = imediato ? 0 : 450;
+  freteDebounceId = window.setTimeout(() => {
+    recalcularFreteCheckout();
+  }, wait);
+}
+
 function bindDeliveryEvents() {
-  const radios = document.querySelectorAll('input[name="delivery_method"]');
-  radios.forEach((radio) => {
-    radio.addEventListener('change', () => {
-      const method = getSelectedDeliveryMethod();
-      freteAtual = DELIVERY_OPTIONS[method]?.price || DELIVERY_OPTIONS.padrao.price;
-      atualizarEstadoEntregaVisual();
-      atualizarTotais();
-      renderCheckoutCouponState();
-    });
+  const container = document.getElementById('delivery-options');
+  if (!container) return;
+
+  container.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (target.name !== 'delivery_method') return;
+
+    const key = String(target.value || '');
+    const selected = freteOpcoes.find((o) => getFreteKey(o) === key) || null;
+    if (!selected) return;
+
+    selecionarFrete(selected);
+    atualizarEstadoEntregaVisual();
+    atualizarTotais();
+    renderCheckoutCouponState();
   });
 }
 
@@ -406,8 +686,29 @@ function bindCustomerEvents() {
   const saveBtn = document.getElementById('customer-save-btn');
   const editBtn = document.getElementById('customer-edit-btn');
 
-  saveBtn?.addEventListener('click', () => {
-    saveCustomerData();
+  saveBtn?.addEventListener('click', async () => {
+    const helper = document.getElementById('checkout-helper');
+    if (helper) helper.textContent = '';
+
+    const data = saveCustomerData();
+    if (!data) return;
+
+    try {
+      await upsertOrderDraft(data);
+      // Se estiver logado, também mantém os dados no perfil do usuário.
+      if (usuarioAtual?.uid) {
+        try {
+          await salvarClienteNoFirestore(usuarioAtual, data);
+        } catch (err) {
+          console.warn('Não foi possível sincronizar dados do cliente no perfil:', err);
+        }
+      }
+
+      if (helper) helper.textContent = 'Dados salvos com sucesso.';
+    } catch (err) {
+      console.error('Erro ao salvar pedido em rascunho:', err);
+      if (helper) helper.textContent = 'Não foi possível salvar seus dados agora. Tente novamente.';
+    }
   });
 
   editBtn?.addEventListener('click', () => {
@@ -419,6 +720,7 @@ function bindCustomerEvents() {
   cepInput?.addEventListener('input', () => {
     cepInput.value = mascararCep(cepInput.value);
     salvarRascunhoCliente();
+    agendarCalculoFrete();
   });
   telefoneInput?.addEventListener('input', () => {
     telefoneInput.value = mascararTelefone(telefoneInput.value);
@@ -440,29 +742,7 @@ function atualizarEstadoBotao(emAndamento) {
 }
 
 async function salvarPedidoFirestore(customerData) {
-  const method = getSelectedDeliveryMethod();
-  const payload = {
-    userId: usuarioAtual?.uid || 'guest',
-    nome: customerData.nome,
-    email: customerData.email,
-    telefone: customerData.telefone,
-    endereco: `${customerData.endereco}, ${customerData.numero}${customerData.complemento ? ` - ${customerData.complemento}` : ''}`,
-    numero: customerData.numero,
-    cidade: customerData.cidade,
-    estado: customerData.estado,
-    cep: customerData.cep,
-    produtos: carrinhoAtual,
-    subtotal: subtotalAtual,
-    frete: freteAtual,
-    cupom: cupomAplicado || null,
-    total: getTotal(),
-    data: serverTimestamp(),
-    complemento: customerData.complemento,
-    metodoEntrega: method,
-  };
-
-  const ref = await addDoc(collection(db, 'orders_draft'), payload);
-  return { id: ref.id, payload };
+  return upsertOrderDraft(customerData);
 }
 
 export async function startCheckout() {
@@ -492,19 +772,27 @@ export async function startCheckout() {
 
     await salvarPedidoFirestore(customerData);
 
-    const method = getSelectedDeliveryMethod();
+    const methodKey = getSelectedDeliveryMethod();
+    const selectedOption = getSelectedFreteOption();
     const total = getTotal();
+
+    const ownerId = getCheckoutOwnerId();
 
     localStorage.setItem(
       'last_order',
       JSON.stringify({
+        userId: ownerId,
         itens: carrinhoAtual,
         subtotal: subtotalAtual,
         frete: freteAtual,
+        freteOpcaoId: selectedOption ? getFreteKey(selectedOption) : (methodKey || null),
+        freteMetodo: selectedOption?.nome || null,
+        fretePrazo: selectedOption?.prazo || null,
         desconto: getCupomDesconto(),
         total,
         cupom: cupomAplicado || null,
-        metodoEntrega: method,
+        metodoEntregaId: methodKey || null,
+        metodoEntrega: selectedOption?.nome || (methodKey || null),
         criadoEm: Date.now(),
       })
     );
@@ -512,18 +800,33 @@ export async function startCheckout() {
     localStorage.setItem(
       CHECKOUT_DRAFT_KEY,
       JSON.stringify({
+        userId: ownerId,
         itens: carrinhoAtual,
         subtotal: subtotalAtual,
         frete: freteAtual,
+        freteOpcaoId: selectedOption ? getFreteKey(selectedOption) : (methodKey || null),
+        freteMetodo: selectedOption?.nome || null,
+        fretePrazo: selectedOption?.prazo || null,
         desconto: getCupomDesconto(),
         total,
         cupom: cupomAplicado || null,
         cep: customerData.cep,
+        metodoEntregaId: methodKey || null,
+        metodoEntrega: selectedOption?.nome || (methodKey || null),
         criadoEm: Date.now(),
       })
     );
 
-    await iniciarPagamentoMP(carrinhoAtual, usuarioAtual?.uid || 'guest');
+    const pref = await iniciarPagamentoMP(carrinhoAtual, getCheckoutOwnerId());
+    const initPoint = pref?.init_point || pref?.initPoint || '';
+    if (!initPoint) {
+      if (helper) helper.textContent = 'Não foi possível iniciar o pagamento agora. Tente novamente.';
+      checkoutEmAndamento = false;
+      atualizarEstadoBotao(false);
+      return;
+    }
+
+    window.location.href = initPoint;
   } catch (error) {
     console.error('Erro ao iniciar checkout:', error);
     if (helper) helper.textContent = 'Não foi possível iniciar o pagamento agora. Tente novamente.';
@@ -538,18 +841,24 @@ function bindCheckoutAction() {
 }
 
 function initAuth() {
-  onAuthStateChanged(auth, (user) => {
+  onAuthStateChanged(auth, async (user) => {
     usuarioAtual = user || null;
     atualizarCardLogin(user);
     preencherCamposUsuario(user);
 
+    const loginAnchor = document.querySelector('#checkout-login-message a');
+    if (loginAnchor) {
+      loginAnchor.setAttribute('href', user ? 'perfil.html' : 'login.html?redirect=checkout');
+    }
+
     // Agora que sabemos o usuário (ou guest), carregamos os dados do cliente
     // sem risco de vazar informações entre contas.
-    initCustomerCard();
+    await initCustomerCard();
+    agendarCalculoFrete(true);
   });
 }
 
-function initCustomerCard() {
+async function initCustomerCard() {
   // Migração segura (legado): havia uma chave única "checkout_customer".
   // Para evitar vazamento, só migra quando:
   // - usuário não logado (guest), OU
@@ -579,15 +888,43 @@ function initCustomerCard() {
     return;
   }
 
+  // Se o usuário estiver logado e não houver dados locais, tenta buscar do Firestore.
+  if (usuarioAtual?.uid) {
+    const remote = await carregarClienteSalvoFirestore(usuarioAtual);
+    if (remote) {
+      // Salva localmente também para ficar rápido nos próximos acessos.
+      try {
+        localStorage.setItem(getCustomerStorageKey(usuarioAtual), JSON.stringify(remote));
+      } catch {
+        // ignore
+      }
+
+      preencherFormularioCliente(remote);
+
+      const validation = validateCustomerData(remote);
+      if (validation.ok) {
+        renderCustomerReadonly(remote);
+        setCustomerMode('view');
+      } else {
+        setCustomerMode('edit');
+      }
+      return;
+    }
+  }
+
   const draftCustomer = carregarRascunhoCliente();
   if (draftCustomer) preencherFormularioCliente(draftCustomer);
   setCustomerMode('edit');
 }
 
 function init() {
+  const loginAnchor = document.querySelector('#checkout-login-message a');
+  if (loginAnchor) loginAnchor.setAttribute('href', 'login.html?redirect=checkout');
+
   loadCart();
-  bindDeliveryEvents();
   carregarDraft();
+  bindDeliveryEvents();
+  renderDeliveryOptions();
   atualizarEstadoEntregaVisual();
   bindCustomerEvents();
   bindCouponEvents();
