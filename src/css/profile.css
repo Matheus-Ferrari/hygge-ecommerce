@@ -4,10 +4,11 @@
 
 /* No perfil, o cabeçalho deve ser sempre sólido (sem transparência) */
 .header {
-  position: sticky;
-  top: 0;
-  background: var(--verde-header);
-  box-shadow: var(--sombra-header-fixo);
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 1000;
+  background: var(--verde-header) !important;
+  box-shadow: var(--sombra-header-fixo) !important;
 }
 
 .header.header--scrolled {

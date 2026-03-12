@@ -39,9 +39,9 @@ body.product-page > main {
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
 }
 
-/* Checkout: mantém a coluna de resumo fixa */
+/* Checkout: coluna de resumo fluida entre 340px e 460px */
 .checkout-layout {
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) clamp(340px, 36vw, 460px);
 }
 
 .cart-layout__left,
@@ -94,6 +94,8 @@ body.product-page > main {
   border-radius: 16px;
   flex: 0 0 120px;
   margin: 0;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .cart-item-card__imageWrap {
@@ -101,11 +103,27 @@ body.product-page > main {
 }
 
 .cart-item-card__image {
-  max-width: 110px;
-  max-height: 110px;
   width: 100%;
-  height: auto;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
+}
+
+/* Cancela inclinação e hover do PNG nos cards do carrinho */
+.cart-item-card .produto-img,
+.cart-item-card.produto-card:hover .produto-img,
+.cart-item-card.produto-card:focus .produto-img {
+  transform: none !important;
+  filter: none !important;
+}
+/* Cancela qualquer efeito no wrapper do carrinho */
+.cart-item-card .produto-img-bg,
+.cart-item-card.produto-card:hover .produto-img-bg,
+.cart-item-card.produto-card:focus .produto-img-bg,
+.cart-item-card__imageWrap.produto-img-bg {
+  transform: none !important;
+  box-shadow: none !important;
 }
 
 .cart-item-card__info {
@@ -206,10 +224,17 @@ body.product-page > main {
 .cart-summary,
 .checkout-summary,
 .checkout-card {
-  min-height: auto;
+  min-height: auto !important;
+  height: auto !important;
   margin: 0;
   border-radius: 20px;
   padding: 20px;
+}
+
+/* Respiro extra do card Resumo do pedido no carrinho */
+.cart-summary {
+  padding: 24px 32px !important;
+  box-sizing: border-box;
 }
 
 /* Carrinho: evita “altura de card” sobrando e cola no conteúdo */
@@ -288,6 +313,10 @@ body.product-page > main {
   align-self: start;
 }
 
+.checkout-summary {
+  padding: 24px 28px !important;
+}
+
 .cart-summary__line,
 .checkout-summary__line {
   display: flex;
@@ -314,7 +343,7 @@ body.product-page > main {
 .cart-summary__shippingRow {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 10px;
+  gap: 8px;
 }
 
 .cart-summary__shippingRow .btn-comprar {
@@ -335,7 +364,8 @@ body.product-page > main {
 .cart-summary__button,
 .checkout-submit {
   width: 100%;
-  margin: 0;
+  display: block;
+  box-sizing: border-box;
 }
 
 .cart-empty {
@@ -350,7 +380,7 @@ body.product-page > main {
 }
 
 .checkout-page {
-  padding-top: 118px;
+  padding-top: clamp(90px, 10vh, 118px);
   padding-bottom: 42px;
 }
 
@@ -362,11 +392,18 @@ body.product-page > main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.checkout-card__headerRow .checkout-card__title {
+  margin: 0;
+  flex: 1 1 auto;
 }
 
 .checkout-edit-btn {
   padding: 0.4em 1.2em;
+  flex-shrink: 0;
 }
 
 .checkout-form {
@@ -515,7 +552,7 @@ body.product-page > main {
 
 .checkout-coupon {
   margin: 0 0 12px 0;
-  padding: 12px;
+  padding: 12px 20px;
   border-radius: 12px;
   background: #f4f1ed;
 }

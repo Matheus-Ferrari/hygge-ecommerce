@@ -1,8 +1,27 @@
+
 import { obterCalculoFrete } from './checkoutService.js';
 
 const CART_KEY = 'cart';
 const LEGACY_CART_KEY = 'carrinho';
 const CHECKOUT_DRAFT_KEY = 'checkout_draft';
+
+const CART_IMAGE_FALLBACK = 'src/img/logo.png';
+
+// Converte gs://bucket/path para URL REST pública do Firebase Storage.
+// Mesma lógica do productPage.js — sem chamada de rede.
+function normalizeCartImage(path) {
+  if (!path) return CART_IMAGE_FALLBACK;
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith('gs://')) {
+    const withoutScheme = path.slice('gs://'.length);
+    const slashIndex = withoutScheme.indexOf('/');
+    if (slashIndex === -1) return CART_IMAGE_FALLBACK;
+    const bucket = withoutScheme.slice(0, slashIndex);
+    const filePath = withoutScheme.slice(slashIndex + 1);
+    return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(filePath)}?alt=media`;
+  }
+  return CART_IMAGE_FALLBACK;
+}
 
 let freteAtual = 0;
 let cupomAplicado = null;
@@ -55,12 +74,14 @@ function formatarCep(cep) {
 }
 
 function normalizarItem(item) {
+  const imagemOriginal = String(item?.imagem || '');
+  const imagemNormalizada = normalizeCartImage(imagemOriginal || null);
   return {
     id: String(item?.id || ''),
     nome: String(item?.nome || 'Produto'),
     descricao: String(item?.descricao || 'Jogo de cartas Hygge Games.'),
     preco: 119,
-    imagem: String(item?.imagem || 'src/img/logo.png'),
+    imagem: imagemNormalizada,
     quantidade: Math.max(1, Number(item?.quantidade || 1)),
   };
 }
@@ -69,7 +90,20 @@ function lerCarrinho() {
   try {
     const raw = localStorage.getItem(CART_KEY);
     const parsed = raw ? JSON.parse(raw) : null;
-    if (Array.isArray(parsed)) return parsed.map(normalizarItem);
+
+    if (Array.isArray(parsed)) {
+      console.log('[Cart] cart original:', parsed);
+      const normalizado = parsed.map((item) => {
+        console.log('[Cart] imagem original:', item?.imagem);
+        const normalizado = normalizarItem(item);
+        console.log('[Cart] imagem convertida:', normalizado.imagem);
+        return normalizado;
+      });
+      // Migra o localStorage para remover quaisquer gs:// salvos anteriormente
+      localStorage.setItem(CART_KEY, JSON.stringify(normalizado));
+      console.log('[Cart] cart migrado final:', normalizado);
+      return normalizado;
+    }
 
     const legacyRaw = localStorage.getItem(LEGACY_CART_KEY);
     const legacyParsed = legacyRaw ? JSON.parse(legacyRaw) : [];
@@ -154,7 +188,7 @@ function criarItemCard(item) {
 
   card.innerHTML = `
     <div class="cart-item-card__imageWrap produto-img-bg">
-      <img src="${item.imagem}" alt="${item.nome}" class="produto-img cart-item-card__image" />
+      <img src="${item.imagem}" alt="${item.nome}" class="produto-img cart-item-card__image" onerror="this.src='src/img/logo.png'; this.style.objectFit='contain';" />
     </div>
 
     <div class="cart-item-card__info">

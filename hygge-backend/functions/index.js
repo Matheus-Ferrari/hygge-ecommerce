@@ -334,6 +334,7 @@ exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
         insurance_value: Number(item.preco),
         quantity: item.quantidade,
       })),
+      services: "1,2,17" // 1=PAC, 2=SEDEX, 17=Total Express Standard
     };
 
     const response = await axios.post(
@@ -342,20 +343,24 @@ exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
       {
         headers: {
           "Accept": "application/json",
-          "Authorization": `Bearer ${melhorEnvioToken.value()}`, // Usa o novo parâmetro
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${melhorEnvioToken.value()}`,
+          "User-Agent": "HyggeGames (contato@hyggegames.com.br)",
         },
       }
     );
 
-    // Filtra para retornar apenas PAC (ID 1) e Total Express (ID 3)
+    // IDs Melhor Envio: 1=Correios PAC, 2=Correios SEDEX, 3=Jadlog .Package, 11=Total Express
+    // Filtra apenas os serviços disponíveis e com preço válido
     const opcoes = response.data
-      .filter((s) => s.id === 1 || s.id === 3)
+      .filter((s) => s.price != null && !s.error)
       .map((s) => ({
         id: s.id,
         nome: s.name,
         valor: Number(s.price),
-        prazo: `${s.delivery_range.max} dias úteis`,
-      }));
+        prazo: s.delivery_range?.max ? `${s.delivery_range.max} dias úteis` : '',
+      }))
+      .sort((a, b) => a.valor - b.valor);
 
     res.json(opcoes);
   } catch (error) {

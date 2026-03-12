@@ -1,3 +1,5 @@
+
+
 // productPage.js - Página de detalhes do produto (Hygge Games)
 // Requisitos desta etapa:
 // - URL: produto.html?id=slug-do-produto (ex: acertei-na-mosca)
@@ -9,6 +11,37 @@
 //   cart = [{ id, nome, preco, quantidade, imagem }]
 
 const BASE_PRICE = 119;
+
+// Converte gs://bucket/path para a URL REST pública do Firebase Storage.
+// Não faz nenhuma chamada de rede — a conversão é determinística e síncrona.
+// Requer apenas que o arquivo seja legível publicamente nas regras do Storage.
+const resolveStorageUrl = (path) => {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith('gs://')) {
+    // gs://bucket/some/path/file.png
+    //   → https://firebasestorage.googleapis.com/v0/b/bucket/o/some%2Fpath%2Ffile.png?alt=media
+    const withoutScheme = path.slice('gs://'.length); // 'bucket/some/path/file.png'
+    const slashIndex = withoutScheme.indexOf('/');
+    if (slashIndex === -1) return null;
+    const bucket = withoutScheme.slice(0, slashIndex);
+    const filePath = withoutScheme.slice(slashIndex + 1);
+    return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(filePath)}?alt=media`;
+  }
+  return null;
+};
+
+// Converte um array de caminhos (gs:// ou https://) em URLs renderizáveis,
+// removendo itens inválidos e duplicados.
+const resolveGalleryUrls = (list) => {
+  if (!Array.isArray(list) || list.length === 0) return [];
+  const unique = [];
+  list.forEach((path) => {
+    const url = resolveStorageUrl(path);
+    if (url && !unique.includes(url)) unique.push(url);
+  });
+  return unique;
+};
 
 const OFFICIAL_PRODUCTS = {
   'acertei-na-mosca': {
@@ -659,11 +692,36 @@ const init = async () => {
   const categoria = fromFirebase?.categoria;
   const estoque = fromFirebase?.estoque;
 
-  // Sempre usar imagem local por slug como principal (sem placeholder)
-  const imagem = getLocalImageBySlug(slug);
+  // --- Debug temporário ---
+  console.log('[ProductPage] produto completo recebido:', fromFirebase);
+  console.log('[ProductPage] imagemCapa original (gs://):', fromFirebase?.imagemCapa);
+  console.log('[ProductPage] galeria original (gs://):', fromFirebase?.galeria);
+
+  // 4) Converter gs:// → URL REST pública do Firebase Storage (síncrono, sem chamada de API).
+  // Navegadores não renderizam gs:// em <img src>, causando ERR_UNKNOWN_URL_SCHEME.
+  // A URL gerada é do formato: firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media
+  const imagemCapaResolvida = resolveStorageUrl(fromFirebase?.imagemCapa);
+  const galeriaResolvida = resolveGalleryUrls(fromFirebase?.galeria);
+
+  console.log('[ProductPage] imagemCapa convertida:', imagemCapaResolvida);
+  console.log('[ProductPage] galeria convertida:', galeriaResolvida);
+
+  // 5) Prioridade final:
+  //    imagem principal → imagemCapa convertida → 1º item da galeria convertida → fallback local
+  //    galeria          → galeria convertida (se houver) → fallback local por slug
+  const imagem =
+    imagemCapaResolvida ||
+    (galeriaResolvida.length > 0 ? galeriaResolvida[0] : null) ||
+    getLocalImageBySlug(slug);
+
   const imagemFallback = local?.imagem;
-  const imagemFallback2 = fromFirebase?.imagemCapa || fromFirebase?.imagemUrl || (Array.isArray(fromFirebase?.galeria) ? fromFirebase.galeria[0] : '');
-  const imagens = getGalleryImagesBySlug(slug);
+  const imagemFallback2 = getLocalImageBySlug(slug);
+
+  const imagens =
+    galeriaResolvida.length > 0 ? galeriaResolvida : getGalleryImagesBySlug(slug);
+
+  console.log('[ProductPage] product.imagem final:', imagem);
+  console.log('[ProductPage] product.imagens finais:', imagens);
 
   if (!nome || !descricao) {
     setMessage('Produto não encontrado.');
@@ -725,7 +783,15 @@ const init = async () => {
   }
 
   if (buyNowBtn) {
-    buyNowBtn.addEventListener('click', handleBuy);
+    buyNowBtn.addEventListener('click', () => {
+      const quantity = Number(qtyEl?.value || 1);
+      if (!Number.isFinite(quantity) || quantity < 1) {
+        setMessage('Quantidade inválida.');
+        return;
+      }
+      addToCart(product, quantity);
+      window.location.href = 'checkout.html';
+    });
   }
 };
 

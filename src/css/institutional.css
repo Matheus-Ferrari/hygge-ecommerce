@@ -1,0 +1,298 @@
+/* institutional.css — Páginas institucionais e legais (Hygge Games) */
+
+/* Cabeçalho fixo e sólido nestas páginas */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background: var(--verde-header);
+}
+
+/* ─── Hero ─────────────────────────────────────────────────────────────── */
+.inst-hero {
+  background: #003028;
+  color: #fff;
+  padding: 64px 0 48px 0;
+}
+
+.inst-hero__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inst-hero__category {
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #FAE696;
+  margin: 0;
+}
+
+.inst-hero__title {
+  font-family: var(--font-serif);
+  font-size: 2.7rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  line-height: 1.13;
+}
+
+.inst-hero__subtitle {
+  font-family: var(--font-sans);
+  font-size: 1.05rem;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.72);
+  margin: 0;
+  max-width: 520px;
+}
+
+.inst-hero__date {
+  font-family: var(--font-sans);
+  font-size: 0.84rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 4px 0 0 0;
+}
+
+/* ─── Conteúdo ─────────────────────────────────────────────────────────── */
+.inst-page {
+  background: var(--bege-bg);
+  padding: 0 0 96px 0;
+  min-height: 55vh;
+}
+
+.inst-content {
+  background: #fff;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 52px 60px 72px 60px;
+  border-radius: 0 0 24px 24px;
+  box-shadow: 0 6px 40px rgba(0, 0, 0, 0.07);
+}
+
+.inst-content h3 {
+  font-family: var(--font-serif);
+  font-size: 1.38rem;
+  font-weight: 700;
+  color: #003028;
+  margin: 52px 0 14px 0;
+  padding-bottom: 10px;
+  border-bottom: 2px solid rgba(0, 131, 102, 0.18);
+  line-height: 1.3;
+}
+
+.inst-content h3:first-child {
+  margin-top: 0;
+}
+
+.inst-content p {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.85;
+  color: #333;
+  margin: 0 0 14px 0;
+}
+
+.inst-content ul,
+.inst-content ol {
+  padding-left: 22px;
+  margin: 0 0 14px 0;
+}
+
+.inst-content ul li,
+.inst-content ol li {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.85;
+  color: #333;
+  margin-bottom: 6px;
+}
+
+.inst-content strong {
+  color: #111;
+  font-weight: 600;
+}
+
+.inst-content a {
+  color: #008366;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.inst-content a:hover {
+  color: #003028;
+}
+
+/* Caixa de destaque (dica / nota) */
+.inst-highlight {
+  background: #f0f9f6;
+  border-left: 4px solid #008366;
+  border-radius: 0 8px 8px 0;
+  padding: 18px 22px;
+  margin: 28px 0;
+}
+
+.inst-highlight p {
+  margin: 0;
+  color: #003028;
+  font-weight: 500;
+}
+
+/* Tabela de tipos de cookies */
+.inst-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 20px 0;
+  font-family: var(--font-sans);
+  font-size: 0.96rem;
+}
+
+.inst-table th {
+  background: #003028;
+  color: #fff;
+  font-weight: 600;
+  padding: 12px 16px;
+  text-align: left;
+}
+
+.inst-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  color: #333;
+  line-height: 1.55;
+}
+
+.inst-table tr:last-child td {
+  border-bottom: none;
+}
+
+.inst-table tr:nth-child(even) td {
+  background: #f7faf9;
+}
+
+/* Botão de voltar */
+.inst-back,
+.inst-content .inst-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #008366;
+  color: #fff !important;
+  text-decoration: none !important;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 0.95rem;
+  border-radius: 24px;
+  padding: 10px 24px;
+  text-decoration: none;
+  margin-top: 40px;
+  transition: background 0.2s;
+}
+
+.inst-back:hover {
+  background: #003028;
+  color: #fff !important;
+  text-decoration: none;
+}
+
+/* ─── Sobre — cartões de valores ───────────────────────────────────────── */
+.inst-values {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 18px;
+  margin: 14px 0 28px 0;
+}
+
+.inst-value-card {
+  background: #f7faf9;
+  border: 1.5px solid rgba(0, 131, 102, 0.15);
+  border-radius: 16px;
+  padding: 22px 20px;
+  text-align: center;
+}
+
+.inst-value-card__icon {
+  font-size: 2rem;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.inst-value-card__title {
+  font-family: var(--font-serif);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #003028;
+  margin: 0 0 6px 0;
+}
+
+.inst-value-card__text {
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: #555;
+  margin: 0;
+}
+
+/* Contato — cartões de canal */
+.inst-contact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+  margin: 14px 0 28px 0;
+}
+
+.inst-contact-card {
+  border: 1.5px solid rgba(0, 0, 0, 0.08);
+  border-radius: 18px;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inst-contact-card__icon {
+  font-size: 1.8rem;
+}
+
+.inst-contact-card__label {
+  font-family: var(--font-serif);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #003028;
+  margin: 0;
+}
+
+.inst-contact-card__info {
+  font-family: var(--font-sans);
+  font-size: 0.98rem;
+  line-height: 1.6;
+  color: #444;
+  margin: 0;
+}
+
+/* ─── Responsivo ────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .inst-hero {
+    padding: 48px 0 34px 0;
+  }
+
+  .inst-hero__title {
+    font-size: 2rem;
+  }
+
+  .inst-content {
+    padding: 32px 22px 52px 22px;
+    border-radius: 0 0 16px 16px;
+  }
+
+  .inst-table {
+    font-size: 0.88rem;
+  }
+
+  .inst-table th,
+  .inst-table td {
+    padding: 10px 10px;
+  }
+}

@@ -24,8 +24,14 @@ export default defineConfig({
         perfil:           resolve(__dirname, 'perfil.html'),
         produto:          resolve(__dirname, 'produto.html'),
         'reset-password': resolve(__dirname, 'reset-password.html'),
-        'sobre-a-rig':    resolve(__dirname, 'sobre-a-rig.html'),
-        'todos-os-jogos': resolve(__dirname, 'todos-os-jogos.html'),
+        'sobre-a-rig':          resolve(__dirname, 'sobre-a-rig.html'),
+        'sobre-hygge':          resolve(__dirname, 'sobre-hygge.html'),
+        'todos-os-jogos':       resolve(__dirname, 'todos-os-jogos.html'),
+        'politica-privacidade': resolve(__dirname, 'politica-privacidade.html'),
+        'termos-de-uso':        resolve(__dirname, 'termos-de-uso.html'),
+        'politica-de-cookies':  resolve(__dirname, 'politica-de-cookies.html'),
+        'troca-e-devolucao':    resolve(__dirname, 'troca-e-devolucao.html'),
+        'entrega-e-frete':      resolve(__dirname, 'entrega-e-frete.html'),
       }
     }
   }
