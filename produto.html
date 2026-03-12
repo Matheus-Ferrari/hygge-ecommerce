@@ -64,8 +64,12 @@
 
                     <div class="product-detail__buy" aria-label="Compra">
                         <div class="product-detail__qtyRow">
-                            <label for="quantity" class="product-detail__label">Quantidade</label>
-                            <input type="number" id="quantity" class="product-detail__qty" min="1" value="1" />
+                            <label class="product-detail__label">Quantidade</label>
+                            <div class="product-detail__qtyControl">
+                                <button class="product-detail__qtyBtn" id="qty-minus" type="button" aria-label="Diminuir quantidade">−</button>
+                                <span class="product-detail__qtyValue" id="quantity" aria-live="polite">1</span>
+                                <button class="product-detail__qtyBtn" id="qty-plus" type="button" aria-label="Aumentar quantidade">+</button>
+                            </div>
                         </div>
                         <div class="product-detail__btnRow" aria-label="Ações de compra">
                             <button id="buy-now-btn" class="btn-comprar" type="button">Comprar agora</button>

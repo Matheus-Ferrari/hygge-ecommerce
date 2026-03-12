@@ -36,17 +36,158 @@
     .footer-hygge {
       border-radius: 0 !important;
     }
+    /* Wider container for the register form */
+    .register-container {
+      max-width: 680px !important;
+      padding-left: 36px !important;
+      padding-right: 36px !important;
+    }
+    /* 2-column grid for the register inputs */
+    .reg-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      width: 100%;
+    }
+    .reg-full {
+      grid-column: 1 / -1;
+    }
+    /* Password checklist */
+    .password-checklist {
+      list-style: none;
+      margin: 0;
+      padding: 10px 14px;
+      background: rgba(0,0,0,0.04);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      font-family: 'Inter', Arial, sans-serif;
+      font-size: 0.88rem;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .password-checklist li {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: #888;
+      transition: color 0.2s;
+    }
+    .password-checklist li::before {
+      content: '✗';
+      font-size: 0.85rem;
+      color: #c00;
+      flex-shrink: 0;
+      transition: color 0.2s;
+    }
+    .password-checklist li.ok {
+      color: #007a54;
+    }
+    .password-checklist li.ok::before {
+      content: '✓';
+      color: #007a54;
+    }
+    /* Raise the wrapper 100px higher so card doesn't clip into the footer */
+    .register-container-wrapper {
+      top: calc(50% - 275px) !important;
+    }
+    @keyframes checklistShake {
+      0%   { transform: translateX(0); }
+      15%  { transform: translateX(-6px); }
+      30%  { transform: translateX(6px); }
+      45%  { transform: translateX(-4px); }
+      60%  { transform: translateX(4px); }
+      75%  { transform: translateX(-2px); }
+      100% { transform: translateX(0); }
+    }
+    .checklist-shake {
+      animation: checklistShake 0.45s ease;
+      border: 1.5px solid #c00;
+    }
+    @media (max-width: 640px) {
+      /* Body cresce com o conteúdo no mobile */
+      body {
+        height: auto !important;
+        min-height: 100vh !important;
+      }
+      /* Hero cresce com conteúdo, banner vira fundo absoluto */
+      .hero {
+        height: auto !important;
+        min-height: 100svh !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        align-items: stretch !important;
+        position: relative !important;
+      }
+      /* Banner como camada de fundo, sem ocupar espaço no fluxo */
+      .hero > img {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover !important;
+        pointer-events: none !important;
+      }
+      /* Wrapper vira elemento normal no fluxo, sem position absolute */
+      .register-container-wrapper {
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        width: 100% !important;
+        height: auto !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: flex-start !important;
+        padding: 100px 16px 40px 16px !important;
+        box-sizing: border-box !important;
+        z-index: 10 !important;
+        pointer-events: auto !important;
+      }
+      /* Container do formulário */
+      .reg-grid {
+        grid-template-columns: 1fr;
+      }
+      .register-container {
+        max-width: 100% !important;
+        width: 100% !important;
+        padding: 24px 18px !important;
+        box-sizing: border-box !important;
+      }
+    }
   </style>
 </head>
 <body>
   <h1 class="sr-only">Cadastro - Hygge Games</h1>
   <header id="main-header" class="header">
-    <!-- Header global será carregado normalmente -->
+    <button class="menu-btn" aria-label="Abrir menu">
+      <span class="hamburger"></span>
+      <span class="hamburger"></span>
+      <span class="hamburger"></span>
+    </button>
+    <a href="index.html" aria-label="Ir para a página inicial">
+      <img src="src/img/logo.png" alt="Logo Hygge Games" class="logo">
+    </a>
+    <div class="header-actions">
+      <a href="carrinho.html" class="cart-btn" aria-label="Carrinho">
+        <svg width="22" height="22" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" style="display:block;"><circle cx="9" cy="21" r="1.5"/><circle cx="19" cy="21" r="1.5"/><path d="M5 6h2l1.68 9.39A2 2 0 0 0 10.65 17h6.7a2 2 0 0 0 1.97-1.61L21 8H7"/></svg>
+      </a>
+      <button class="search-btn" aria-label="Buscar">
+        <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+      <a href="login.html" class="btn-entrar" style="margin-left:5px;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;"><path d="M9 18l6-6-6-6"/><path d="M15 12H3"/><rect x="17" y="3" width="4" height="18" rx="2"/></svg>
+        <span>Entrar</span>
+      </a>
+    </div>
   </header>
-  <section class="hero" style="width:100vw;height:70vh;min-height:0;overflow:hidden;padding:0;margin:0;display:flex;align-items:center;justify-content:center;background:none;">
+  <section class="hero" style="width:100vw;height:80vh;min-height:540px;overflow:hidden;padding:0;margin:0;display:flex;align-items:center;justify-content:center;background:none;">
     <img src="src/img/bannerentrar.png" alt="Banner Cadastro" style="width:100vw;height:100%;object-fit:cover;display:block;">
-    <div class="login-center-wrapper">
-      <div class="login-container">
+    <div class="login-center-wrapper register-container-wrapper">
+      <div class="login-container register-container">
         <div style="width:100%;text-align:center;padding-top:0;margin-bottom:-42px;">
           <h2 style="font-family:'Inter',Arial,sans-serif;font-size:1.35rem;font-weight:700;margin:0 0 10px 0;color:#222;">Criar conta</h2>
           <div style="font-size:1rem;color:#444;opacity:0.85;margin-bottom:0;">Preencha seus dados para criar sua conta.</div>
@@ -54,13 +195,22 @@
             <img src="src/img/logo.png" alt="Logo Hygge Games">
           </div>
         </div>
-        <form class="login-form" id="register-form" style="margin-top:-30px;gap:7px;">
-          <input class="login-input" type="text" name="name" placeholder="Nome completo" autocomplete="name">
-          <input class="login-input" type="email" name="email" placeholder="E-mail" autocomplete="email">
-          <input class="login-input" type="password" name="password" placeholder="Senha" autocomplete="new-password">
-          <input class="login-input" type="password" name="confirm" placeholder="Confirmar senha" autocomplete="new-password">
+        <form class="login-form" id="register-form" style="margin-top:-30px;gap:12px;">
+          <div class="reg-grid">
+            <input class="login-input" type="text" name="name" placeholder="Nome completo" autocomplete="name">
+            <input class="login-input" type="email" name="email" placeholder="E-mail" autocomplete="email">
+            <input class="login-input" type="password" name="password" placeholder="Senha" autocomplete="new-password">
+            <input class="login-input" type="password" name="confirm" placeholder="Confirmar senha" autocomplete="new-password">
+          </div>
+          <ul id="password-checklist" class="password-checklist" aria-live="polite" hidden>
+            <li data-rule="length">Mínimo de 6 caracteres</li>
+            <li data-rule="lower">1 letra minúscula</li>
+            <li data-rule="upper">1 letra maiúscula</li>
+            <li data-rule="number">1 número</li>
+            <li data-rule="symbol">1 símbolo (ex: !@#$)</li>
+          </ul>
           <button class="login-btn" type="submit">Criar conta</button>
-          <button type="button" style="width:98%;background:#fff;color:#00966C;border:2px solid #00966C;border-radius:20px;padding:12px 0;font-size:1.1rem;font-weight:600;cursor:pointer;margin:5px 0 0 0;transition:background 0.2s;text-align:center;box-shadow:0 2px 8px 0 rgba(0,0,0,0.04);" onclick="window.location.href='login.html'">Já tenho conta</button>
+          <button type="button" style="width:100%;background:#fff;color:#00966C;border:2px solid #00966C;border-radius:20px;padding:12px 0;font-size:1.1rem;font-weight:600;cursor:pointer;margin:0;transition:background 0.2s;text-align:center;box-shadow:0 2px 8px 0 rgba(0,0,0,0.04);box-sizing:border-box;" onclick="window.location.href='login.html'">Já tenho conta</button>
         </form>
         <div id="register-error" style="color:#c00;font-size:0.98rem;text-align:center;margin-top:8px;"></div>
         <div id="register-success" style="color:#007a54;font-size:0.98rem;text-align:center;margin-top:8px;"></div>

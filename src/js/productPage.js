@@ -503,16 +503,12 @@ const renderProduct = (product) => {
   }
   if (categoryEl) categoryEl.textContent = safeText(product.categoria || '—');
 
-  const estoqueNumber = Number(product.estoque);
-  const hasEstoqueNumber = Number.isFinite(estoqueNumber) && estoqueNumber >= 0;
-  const estoqueToUse = hasEstoqueNumber ? estoqueNumber : 99;
-  if (stockEl) stockEl.textContent = hasEstoqueNumber ? safeText(estoqueNumber) : 'Disponível';
+  if (stockEl) stockEl.textContent = 'Disponível';
 
   if (qtyEl) {
-    qtyEl.value = '1';
-    qtyEl.min = '1';
-    qtyEl.max = String(Math.max(1, estoqueToUse));
-    qtyEl.disabled = false;
+    qtyEl.textContent = '1';
+    qtyEl.dataset.min = '1';
+    qtyEl.dataset.max = '99';
   }
 
   // Preço inicial (quantidade = 1)
@@ -617,7 +613,7 @@ const updateTotalPrice = () => {
   const priceEl = document.getElementById('product-price');
   if (!qtyEl || !priceEl) return;
 
-  const qty = Math.max(1, Math.floor(Number(qtyEl.value || 1)));
+  const qty = Math.max(1, Math.floor(Number(qtyEl.textContent || 1)));
   const total = BASE_PRICE * qty;
   priceEl.textContent = formatPrice(total);
 };
@@ -658,6 +654,20 @@ const addToCart = (product, quantity) => {
   writeCart(cart);
 };
 
+const getQty = () => {
+  const el = document.getElementById('quantity');
+  return Math.max(1, Math.floor(Number(el?.textContent?.trim() || 1)));
+};
+
+const setQty = (val) => {
+  const el = document.getElementById('quantity');
+  if (!el) return;
+  const max = Number(el.dataset.max || 99);
+  const min = Number(el.dataset.min || 1);
+  el.textContent = String(Math.max(min, Math.min(max, val)));
+  updateTotalPrice();
+};
+
 const init = async () => {
   setMessage('');
 
@@ -690,7 +700,7 @@ const init = async () => {
   const nome = fromFirebase?.nome || local?.nome || official?.h1;
   const descricao = fromFirebase?.descricao || local?.descricao || '';
   const categoria = fromFirebase?.categoria;
-  const estoque = fromFirebase?.estoque;
+  const estoque = undefined;
 
   // --- Debug temporário ---
   console.log('[ProductPage] produto completo recebido:', fromFirebase);
@@ -757,17 +767,11 @@ const init = async () => {
     setMessage('');
   }
 
-  const qtyEl = document.getElementById('quantity');
-  if (qtyEl) {
-    qtyEl.addEventListener('input', updateTotalPrice);
-    qtyEl.addEventListener('change', updateTotalPrice);
-  }
-
   const addBtn = document.getElementById('add-to-cart-btn');
   const buyNowBtn = document.getElementById('buy-now-btn');
 
   const handleBuy = () => {
-    const quantity = Number(qtyEl?.value || 1);
+    const quantity = getQty();
     if (!Number.isFinite(quantity) || quantity < 1) {
       setMessage('Quantidade inválida.');
       return;
@@ -784,7 +788,7 @@ const init = async () => {
 
   if (buyNowBtn) {
     buyNowBtn.addEventListener('click', () => {
-      const quantity = Number(qtyEl?.value || 1);
+      const quantity = getQty();
       if (!Number.isFinite(quantity) || quantity < 1) {
         setMessage('Quantidade inválida.');
         return;
@@ -795,4 +799,12 @@ const init = async () => {
   }
 };
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  // Registra os botões de quantidade imediatamente, sem esperar o Firebase
+  const minusBtn = document.getElementById('qty-minus');
+  const plusBtn  = document.getElementById('qty-plus');
+  if (minusBtn) minusBtn.addEventListener('click', () => setQty(getQty() - 1));
+  if (plusBtn)  plusBtn.addEventListener('click',  () => setQty(getQty() + 1));
+
+  init();
+});

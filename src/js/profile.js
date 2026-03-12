@@ -14,6 +14,50 @@ import {
 } from 'firebase/firestore';
 
 const FAVORITES_KEY = 'hygge_favorites';
+const CEP_STORAGE_KEY = 'hygge_cep';
+
+async function buscarEnderecoPorCepPerfil(digits) {
+  try {
+    const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.erro) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function bindCepAutoPerfil() {
+  const cepInput = document.getElementById('cep');
+  if (!cepInput) return;
+
+  cepInput.addEventListener('input', async () => {
+    const digits = cepInput.value.replace(/\D/g, '').slice(0, 8);
+    // Apply mask while typing
+    if (digits.length <= 5) {
+      cepInput.value = digits;
+    } else {
+      cepInput.value = `${digits.slice(0, 5)}-${digits.slice(5)}`;
+    }
+
+    if (digits.length !== 8) return;
+
+    try { localStorage.setItem(CEP_STORAGE_KEY, digits); } catch { /* ignore */ }
+
+    const data = await buscarEnderecoPorCepPerfil(digits);
+    if (!data) return;
+
+    const ruaInput = document.getElementById('rua');
+    const bairroInput = document.getElementById('bairro');
+    const cidadeInput = document.getElementById('cidade');
+    const estadoInput = document.getElementById('estado');
+    if (ruaInput) ruaInput.value = data.logradouro || '';
+    if (bairroInput) bairroInput.value = data.bairro || '';
+    if (cidadeInput) cidadeInput.value = data.localidade || '';
+    if (estadoInput) estadoInput.value = data.uf || '';
+  });
+}
 
 const CATALOG_PRODUCTS = [
   { slug: 'acertei-na-mosca', name: 'Acertei na Mosca?' },
@@ -295,23 +339,8 @@ function showLoggedInState() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  fillFavoritesSelect();
-  renderFavorites();
   wireTabs();
-
-  const addFavBtn = document.getElementById('favorite-add');
-  if (addFavBtn) {
-    addFavBtn.addEventListener('click', () => {
-      const select = document.getElementById('favorite-select');
-      const slug = select?.value || '';
-      if (!slug) return;
-      const next = readFavorites();
-      next.push(slug);
-      writeFavorites(next);
-      if (select) select.value = '';
-      renderFavorites();
-    });
-  }
+  bindCepAutoPerfil();
 
   const logoutBtn = document.getElementById('logout-btn');
 
@@ -329,7 +358,6 @@ document.addEventListener('DOMContentLoaded', () => {
       logoutBtn.onclick = async () => {
         try {
           await signOut(auth);
-          localStorage.removeItem(FAVORITES_KEY);
           window.location.href = 'login.html';
         } catch (err) {
           console.error('Erro ao sair da conta:', err);

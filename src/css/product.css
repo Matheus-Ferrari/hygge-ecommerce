@@ -105,6 +105,7 @@
   margin: 0 0 10px 0;
   font-size: clamp(1.5rem, 2.5vw, 2.2rem);
   line-height: 1.15;
+  text-align: center;
 }
 
 .product-detail__price {
@@ -132,6 +133,46 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.product-detail__qtyControl {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(0,0,0,0.14);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+  height: 44px;
+}
+
+.product-detail__qtyBtn {
+  width: 40px;
+  height: 44px;
+  border: none;
+  background: #f2ece6;
+  color: #222;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.product-detail__qtyBtn:hover {
+  background: #e5ded6;
+}
+
+.product-detail__qtyValue {
+  width: 48px;
+  text-align: center;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 1.05rem;
+  border: none;
+  outline: none;
+  background: transparent;
+  pointer-events: none;
+  user-select: none;
 }
 
 .product-detail__btnRow {

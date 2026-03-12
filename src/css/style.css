@@ -353,6 +353,7 @@ h2, .produtos-titulo, .section-title {
 h3, .product-card__title {
   font-size: clamp(1.1rem, 1.6vw, 1.45rem);
   line-height: 1.18;
+  text-align: center;
 }
 p, .produto-desc, .descricao, .texto, .section-text {
   font-family: 'Poppins', 'Sinkin Sans', Arial, sans-serif;
@@ -617,6 +618,13 @@ body {
   box-shadow: none;
   transform: none;
 }
+/* Link wrapper around produto-img-bg — preserves all hover effects */
+.produto-img-link {
+  display: block;
+  text-decoration: none;
+  cursor: pointer;
+  border-radius: 32px;
+}
 .produto-img-bg {
   width: 100%;
   max-width: 380px;
@@ -782,7 +790,7 @@ body {
 
   .header-actions .cart-btn,
   .header-actions .search-btn {
-    position: static;
+    position: relative;
     top: auto;
     right: auto;
     transform: none;
@@ -1006,14 +1014,16 @@ body {
   }
   .sobre-hygge-img-wrap {
     width: clamp(200px, 80vw, 420px);
+    min-height: 300px;
     height: auto;
-    min-height: 0;
     margin-left: 0;
+    flex: unset;
   }
   .sobre-hygge-img {
     height: auto;
-    min-height: 0;
+    min-height: 300px;
     transform: none;
+    object-fit: cover;
   }
 }
 
@@ -1113,14 +1123,14 @@ body {
 .login-forgot:hover {
   color: #005c3c;
 }
-@media (max-width: 500px) {
+@media (max-width: 640px) {
   .login-container {
-    max-width: 98vw;
+    max-width: 100%;
     min-width: 0;
-    padding: 12px 4vw;
+    padding: 24px 18px;
+    box-sizing: border-box;
   }
   .login-center-wrapper {
-    top: 30px;
-    height: auto;
+    width: 100%;
   }
 }

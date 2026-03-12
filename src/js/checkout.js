@@ -8,6 +8,7 @@ const CHECKOUT_DRAFT_KEY = 'checkout_draft';
 const CHECKOUT_CUSTOMER_KEY = 'checkout_customer';
 const CHECKOUT_CUSTOMER_DRAFT_KEY = 'checkout_customer_draft';
 const CHECKOUT_OWNER_KEY = 'checkout_owner_id';
+const CEP_STORAGE_KEY = 'hygge_cep';
 
 let usuarioAtual = null;
 let carrinhoAtual = [];
@@ -199,6 +200,44 @@ function formatarPreco(valor) {
 
 function somenteDigitos(value) {
   return String(value || '').replace(/\D/g, '');
+}
+
+function salvarCepLocal(cep) {
+  try { localStorage.setItem(CEP_STORAGE_KEY, cep); } catch { /* ignore */ }
+}
+
+function carregarCepLocal() {
+  try { return localStorage.getItem(CEP_STORAGE_KEY) || ''; } catch { return ''; }
+}
+
+async function buscarEnderecoPorCep(digits) {
+  try {
+    const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.erro) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function autoPreencherEnderecoDoCep(digits) {
+  if (digits.length !== 8) return;
+  const data = await buscarEnderecoPorCep(digits);
+  if (!data) {
+    const helper = document.getElementById('checkout-helper');
+    if (helper && !helper.textContent) helper.textContent = 'CEP não encontrado. Verifique e tente novamente.';
+    return;
+  }
+  const enderecoInput = document.getElementById('endereco');
+  const cidadeInput = document.getElementById('cidade');
+  const estadoInput = document.getElementById('estado');
+  if (enderecoInput) enderecoInput.value = data.logradouro || '';
+  if (cidadeInput) cidadeInput.value = data.localidade || '';
+  if (estadoInput) estadoInput.value = data.uf || '';
+  salvarCepLocal(digits);
+  salvarRascunhoCliente();
 }
 
 function mascararCep(value) {
@@ -720,6 +759,8 @@ function bindCustomerEvents() {
   cepInput?.addEventListener('input', () => {
     cepInput.value = mascararCep(cepInput.value);
     salvarRascunhoCliente();
+    const digits = somenteDigitos(cepInput.value);
+    if (digits.length === 8) autoPreencherEnderecoDoCep(digits);
     agendarCalculoFrete();
   });
   telefoneInput?.addEventListener('input', () => {
@@ -913,7 +954,16 @@ async function initCustomerCard() {
   }
 
   const draftCustomer = carregarRascunhoCliente();
-  if (draftCustomer) preencherFormularioCliente(draftCustomer);
+  if (draftCustomer) {
+    preencherFormularioCliente(draftCustomer);
+  } else {
+    // Pre-fill CEP from shared localStorage if present
+    const savedCep = carregarCepLocal();
+    if (savedCep) {
+      const cepEl = document.getElementById('cep');
+      if (cepEl && !cepEl.value) cepEl.value = mascararCep(savedCep);
+    }
+  }
   setCustomerMode('edit');
 }
 

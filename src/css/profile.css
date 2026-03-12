@@ -223,6 +223,15 @@
 .profile-actions--logout {
   justify-content: center;
   margin-top: 26px;
+  margin-bottom: 26px;
+  width: 100%;
+  grid-column: 1 / -1;
+  display: flex;
+}
+
+.profile-actions--logout #logout-btn {
+  min-width: 200px;
+  text-align: center;
 }
 
 .profile-actions .btn-comprar {

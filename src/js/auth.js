@@ -32,18 +32,32 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!form) return;
 
   const passwordInput = form.elements.namedItem('password');
+  const checklist = document.getElementById('password-checklist');
+
+  function updateChecklist(val) {
+    if (!checklist) return;
+    checklist.hidden = !val;
+    const rules = {
+      length: val.length >= PASSWORD_MIN_LENGTH,
+      lower:  /[a-z]/.test(val),
+      upper:  /[A-Z]/.test(val),
+      number: /\d/.test(val),
+      symbol: /[^A-Za-z0-9]/.test(val),
+    };
+    checklist.querySelectorAll('li[data-rule]').forEach((li) => {
+      const rule = li.dataset.rule;
+      li.classList.toggle('ok', Boolean(rules[rule]));
+    });
+  }
+
   if (passwordInput && passwordInput instanceof HTMLInputElement) {
     passwordInput.addEventListener('input', () => {
-      if (!errorDiv) return;
       const val = passwordInput.value || '';
-      if (!val) {
-        if (errorDiv.dataset.source === 'password-strength') errorDiv.textContent = '';
-        return;
+      updateChecklist(val);
+      // Clear submit-level strength error while user is typing
+      if (errorDiv && errorDiv.dataset.source === 'password-strength') {
+        errorDiv.textContent = '';
       }
-
-      const strength = avaliarForcaSenha(val);
-      errorDiv.dataset.source = 'password-strength';
-      errorDiv.textContent = strength.ok ? '' : strength.message;
     });
   }
 
@@ -70,9 +84,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!strength.ok) {
       if (errorDiv) {
         errorDiv.dataset.source = 'password-strength';
-        errorDiv.textContent = strength.message;
+        errorDiv.textContent = 'Sua senha não atende todos os requisitos abaixo.';
       }
-      (form.elements.namedItem('password') instanceof HTMLElement ? form.elements.namedItem('password') : null)?.focus?.();
+      // Show checklist and shake it so the user sees what's missing
+      if (checklist) {
+        checklist.hidden = false;
+        updateChecklist(password);
+        checklist.classList.remove('checklist-shake');
+        // Force reflow so the animation restarts
+        void checklist.offsetWidth;
+        checklist.classList.add('checklist-shake');
+      }
+      passwordInput instanceof HTMLElement && passwordInput.focus?.();
       return;
     }
 
