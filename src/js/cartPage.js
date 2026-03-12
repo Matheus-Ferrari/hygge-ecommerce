@@ -1,4 +1,4 @@
-
+﻿
 import { obterCalculoFrete } from './checkoutService.js';
 
 const CART_KEY = 'cart';
@@ -174,7 +174,7 @@ function renderCarrinhoVazio(container) {
 
   wrapper.innerHTML = `
     <p class="cart-empty__title">Seu carrinho está vazio</p>
-    <a href="todos-os-jogos.html" class="btn-comprar" style="display:inline-block;">Ver produtos</a>
+    <a href="/todos-os-jogos" class="btn-comprar" style="display:inline-block;">Ver produtos</a>
   `;
 
   container.appendChild(wrapper);
@@ -418,7 +418,7 @@ function renderResumo(container, itens) {
       criadoEm: Date.now(),
     });
 
-    window.location.href = 'checkout.html';
+    window.location.href = '/checkout';
   });
 
   container.appendChild(aside);
@@ -444,7 +444,7 @@ function renderCarrinho() {
 
   const topActions = document.createElement('div');
   topActions.className = 'cart-top-actions';
-  topActions.innerHTML = '<a href="index.html" class="btn-mostrar-jogos cart-continue-btn">Continuar navegando</a>';
+  topActions.innerHTML = '<a href="/" class="btn-mostrar-jogos cart-continue-btn">Continuar navegando</a>';
   listaColuna.appendChild(topActions);
 
   itens.forEach((item) => {

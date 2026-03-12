@@ -1,10 +1,10 @@
-
+﻿
 
 // productPage.js - Página de detalhes do produto (Hygge Games)
 // Requisitos desta etapa:
-// - URL: produto.html?id=slug-do-produto (ex: acertei-na-mosca)
+// - URL: /produto?id=slug-do-produto (ex: acertei-na-mosca)
 // - Tentar Firebase (quando possível) e, se não encontrar, usar dados locais:
-//   - Imagens e descrições existentes em todos-os-jogos.html
+//   - Imagens e descrições existentes em /todos-os-jogos
 // - Preço base fixo: R$ 119,00
 // - Atualizar valor total conforme quantidade
 // - Carrinho no localStorage:
@@ -391,7 +391,7 @@ const tryGetFirebaseProductBySlug = async (slug) => {
 
 const fetchLocalCatalogFromTodosOsJogos = async () => {
   // Lê os cards locais já existentes (imagem/descrição) sem duplicar dados em JS.
-  const res = await fetch('todos-os-jogos.html', { cache: 'no-store' });
+  const res = await fetch('/todos-os-jogos', { cache: 'no-store' });
   if (!res.ok) throw new Error('Falha ao carregar catálogo local.');
   const html = await res.text();
 
@@ -794,7 +794,7 @@ const init = async () => {
         return;
       }
       addToCart(product, quantity);
-      window.location.href = 'checkout.html';
+      window.location.href = '/checkout';
     });
   }
 };

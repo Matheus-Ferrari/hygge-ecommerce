@@ -1,8 +1,27 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 
+// Plugin que replica o cleanUrls do Firebase Hosting no servidor de desenvolvimento
+const cleanUrlsDevPlugin = {
+  name: 'clean-urls-dev',
+  configureServer(server) {
+    server.middlewares.use((req, _res, next) => {
+      const url = req.url || '/';
+      const qi = url.indexOf('?');
+      const pathname = qi >= 0 ? url.slice(0, qi) : url;
+      const query = qi >= 0 ? url.slice(qi) : '';
+      // Adiciona .html a caminhos sem extensão (ex: /login → /login.html)
+      if (!pathname.includes('.') && pathname !== '/' && !pathname.endsWith('/')) {
+        req.url = pathname + '.html' + query;
+      }
+      next();
+    });
+  },
+};
+
 export default defineConfig({
   root: '.', // Garante que a raiz é a pasta atual
+  plugins: [cleanUrlsDevPlugin],
   server: {
     port: 5173,
     open: true

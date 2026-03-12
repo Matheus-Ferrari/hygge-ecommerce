@@ -1,4 +1,4 @@
-import { auth, db } from '../firebase/firebaseConfig.js';
+﻿import { auth, db } from '../firebase/firebaseConfig.js';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -38,7 +38,7 @@ async function getPreferredUserName(user) {
 function updateHeaderButtonLoggedOut(btn) {
   btn.classList.remove('btn-entrar--user');
   const onCheckout = /\/checkout\.html$/i.test(window.location.pathname || '');
-  btn.setAttribute('href', onCheckout ? 'login.html?redirect=checkout' : 'login.html');
+  btn.setAttribute('href', onCheckout ? '/login?redirect=checkout' : '/login');
   btn.setAttribute('aria-label', 'Entrar');
   btn.style.marginLeft = '';
   btn.innerHTML = `
@@ -50,7 +50,7 @@ function updateHeaderButtonLoggedOut(btn) {
 function updateHeaderButtonLoggedIn(btn, name) {
   const firstName = getFirstName(name) || 'cliente';
   btn.classList.add('btn-entrar--user');
-  btn.setAttribute('href', 'perfil.html');
+  btn.setAttribute('href', '/perfil');
   btn.setAttribute('aria-label', `Ir para o perfil: ${firstName}`);
   btn.style.marginLeft = '';
   btn.innerHTML = buildUserButtonHtml(firstName);

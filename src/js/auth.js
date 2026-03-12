@@ -1,4 +1,4 @@
-import { auth, db } from '../firebase/firebaseConfig.js';
+﻿import { auth, db } from '../firebase/firebaseConfig.js';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp, addDoc, collection } from 'firebase/firestore';
 import { generateEmailTemplate } from '../firebase/emailTemplates.js';
@@ -128,7 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Cria documento na coleção "mail" para disparo do e-mail de boas-vindas
       try {
-        const storeLink = 'https://e-commerce-hygge.firebaseapp.com/index.html';
+        const storeLink = 'https://e-commerce-hygge.firebaseapp.com//';
         await addDoc(collection(db, 'mail'), {
           to: email,
           message: {
@@ -149,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (successDiv) successDiv.textContent = 'Conta criada com sucesso!';
       setTimeout(() => {
-        window.location.href = 'login.html';
+        window.location.href = '/login';
       }, 700);
     } catch (error) {
       console.error('Erro ao criar usuário no Firebase Auth:', error);

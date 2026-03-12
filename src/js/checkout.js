@@ -1,4 +1,4 @@
-import { auth, db } from '../firebase/firebaseConfig.js';
+﻿import { auth, db } from '../firebase/firebaseConfig.js';
 import { iniciarPagamentoMP, obterCalculoFrete } from './checkoutService.js';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
@@ -360,7 +360,7 @@ export function renderOrderSummary() {
   itemsEl.innerHTML = '';
 
   if (!carrinhoAtual.length) {
-    itemsEl.innerHTML = '<p class="checkout-helper">Seu carrinho está vazio. <a href="todos-os-jogos.html">Escolha produtos</a>.</p>';
+    itemsEl.innerHTML = '<p class="checkout-helper">Seu carrinho está vazio. <a href="/todos-os-jogos">Escolha produtos</a>.</p>';
     atualizarTotais();
     return;
   }
@@ -889,7 +889,7 @@ function initAuth() {
 
     const loginAnchor = document.querySelector('#checkout-login-message a');
     if (loginAnchor) {
-      loginAnchor.setAttribute('href', user ? 'perfil.html' : 'login.html?redirect=checkout');
+      loginAnchor.setAttribute('href', user ? '/perfil' : '/login?redirect=checkout');
     }
 
     // Agora que sabemos o usuário (ou guest), carregamos os dados do cliente
@@ -969,7 +969,7 @@ async function initCustomerCard() {
 
 function init() {
   const loginAnchor = document.querySelector('#checkout-login-message a');
-  if (loginAnchor) loginAnchor.setAttribute('href', 'login.html?redirect=checkout');
+  if (loginAnchor) loginAnchor.setAttribute('href', '/login?redirect=checkout');
 
   loadCart();
   carregarDraft();

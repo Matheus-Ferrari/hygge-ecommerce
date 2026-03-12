@@ -1,4 +1,4 @@
-import { auth, db } from '../firebase/firebaseConfig.js';
+﻿import { auth, db } from '../firebase/firebaseConfig.js';
 import { onAuthStateChanged, updateProfile, signOut } from 'firebase/auth';
 import {
   collection,
@@ -262,7 +262,7 @@ function renderFavorites() {
     row.className = 'profile-favItem';
 
     const link = document.createElement('a');
-    link.href = `produto.html?id=${encodeURIComponent(slug)}`;
+    link.href = `/produto?id=${encodeURIComponent(slug)}`;
     link.textContent = label;
 
     const btn = document.createElement('button');
@@ -358,7 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
       logoutBtn.onclick = async () => {
         try {
           await signOut(auth);
-          window.location.href = 'login.html';
+          window.location.href = '/login';
         } catch (err) {
           console.error('Erro ao sair da conta:', err);
           alert('Não foi possível sair agora. Tente novamente.');

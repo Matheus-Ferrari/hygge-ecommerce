@@ -1,4 +1,4 @@
-import { auth } from '../firebase/firebaseConfig.js';
+﻿import { auth } from '../firebase/firebaseConfig.js';
 import { verifyPasswordResetCode, confirmPasswordReset } from 'firebase/auth';
 
 const PASSWORD_MIN_LENGTH = 6;
@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       await confirmPasswordReset(auth, oobCode, password);
       setMessage('Senha redefinida com sucesso! Você já pode entrar.', 'success');
       setTimeout(() => {
-        window.location.href = 'login.html';
+        window.location.href = '/login';
       }, 1500);
     } catch (err) {
       console.error('Erro ao redefinir senha:', err);

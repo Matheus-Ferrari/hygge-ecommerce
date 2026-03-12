@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
@@ -75,17 +75,17 @@
           <span class="hamburger"></span>
           <span class="hamburger"></span>
         </button>
-        <a href="index.html" aria-label="Ir para a página inicial">
+        <a href="/" aria-label="Ir para a página inicial">
           <img src="src/img/logo.png" alt="Logo Hygge Games" class="logo">
         </a>
         <div class="header-actions">
-          <a href="carrinho.html" class="cart-btn" aria-label="Carrinho">
+          <a href="/carrinho" class="cart-btn" aria-label="Carrinho">
             <svg width="22" height="22" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" style="display:block;"><circle cx="9" cy="21" r="1.5"/><circle cx="19" cy="21" r="1.5"/><path d="M5 6h2l1.68 9.39A2 2 0 0 0 10.65 17h6.7a2 2 0 0 0 1.97-1.61L21 8H7"/></svg>
           </a>
           <button class="search-btn" aria-label="Buscar">
               <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </button>
-          <a href="login.html" class="btn-entrar" style="margin-left:5px;">
+          <a href="/login" class="btn-entrar" style="margin-left:5px;">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;"><path d="M9 18l6-6-6-6"/><path d="M15 12H3"/><rect x="17" y="3" width="4" height="18" rx="2"/></svg>
             <span>Entrar</span>
           </a>
@@ -105,9 +105,9 @@
             <form class="login-form" style="margin-top:-10px;gap:7px;">
               <input class="login-input" type="text" placeholder="Usuário ou e-mail" autocomplete="username">
               <input class="login-input" type="password" placeholder="Senha" autocomplete="current-password">
-              <a href="forgot-password.html" class="login-forgot" style="margin-top:2px;">Esqueci minha senha</a>
+              <a href="/forgot-password" class="login-forgot" style="margin-top:2px;">Esqueci minha senha</a>
               <button class="login-btn" type="submit">Entrar</button>
-              <button type="button" style="width:98%;background:#fff;color:#00966C;border:2px solid #00966C;border-radius:20px;padding:12px 0;font-size:1.1rem;font-weight:600;cursor:pointer;margin:5px 0 0 0;transition:background 0.2s;text-align:center;box-shadow:0 2px 8px 0 rgba(0,0,0,0.04);" onmouseover="this.style.background='#f3f3f3'" onmouseout="this.style.background='#fff'" onclick="window.location.href='cadastro.html'">Cadastrar-se</button>
+              <button type="button" style="width:98%;background:#fff;color:#00966C;border:2px solid #00966C;border-radius:20px;padding:12px 0;font-size:1.1rem;font-weight:600;cursor:pointer;margin:5px 0 0 0;transition:background 0.2s;text-align:center;box-shadow:0 2px 8px 0 rgba(0,0,0,0.04);" onmouseover="this.style.background='#f3f3f3'" onmouseout="this.style.background='#fff'" onclick="window.location.href='/cadastro'">Cadastrar-se</button>
             </form>
           </div>
         </div>
@@ -130,7 +130,7 @@
 
         const params = new URLSearchParams(window.location.search);
         const redirect = String(params.get('redirect') || '').trim().toLowerCase();
-        const redirectTarget = redirect === 'checkout' ? 'checkout.html' : 'index.html';
+        const redirectTarget = redirect === 'checkout' ? '/checkout' : '/';
 
         form.addEventListener('submit', async (e) => {
           e.preventDefault();

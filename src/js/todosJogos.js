@@ -1,6 +1,6 @@
-// todosJogos.js
+﻿// todosJogos.js
 // Mantém os cards locais (imagem/descrição já existentes) e apenas ajusta o link
-// do botão "Comprar" e do link da imagem para: produto.html?id=slug-do-nome
+// do botão "Comprar" e do link da imagem para: /produto?id=slug-do-nome
 
 const slugify = (text) => {
   const raw = (text || '').toString().trim();
@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const slug = slugify(titleEl.textContent);
     if (!slug) return;
 
-    const href = `produto.html?id=${encodeURIComponent(slug)}`;
+    const href = `/produto?id=${encodeURIComponent(slug)}`;
     if (buyEl) buyEl.setAttribute('href', href);
     if (imgLinkEl) imgLinkEl.setAttribute('href', href);
   });
