@@ -480,6 +480,10 @@ body {
   background: var(--verde-header);
   box-shadow: var(--sombra-header);
 }
+.page-carrinho .header {
+  background: var(--verde-header) !important;
+  box-shadow: var(--sombra-header) !important;
+}
 .logo {
   height: 69px;
   margin: 0 auto;

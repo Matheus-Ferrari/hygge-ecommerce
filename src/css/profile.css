@@ -280,10 +280,20 @@
   background: rgba(0,0,0,0.03);
 }
 
+.profile-favItem__thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
 .profile-favItem a {
   color: #111;
   text-decoration: none;
   font-weight: 700;
+  flex: 1;
 }
 
 .profile-favItem a:hover {

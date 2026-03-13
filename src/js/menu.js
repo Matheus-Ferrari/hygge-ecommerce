@@ -1,5 +1,6 @@
 // Menu Hambúrguer Global
 import '../css/menu.css';
+import { loadAppAssets } from './script.js';
 
 (function() {
   // Carrega o HTML do menu e insere no topo do body
@@ -13,6 +14,8 @@ import '../css/menu.css';
           document.body.insertBefore(temp.firstChild, document.body.firstChild);
         }
         initMenu();
+        // Chama depois da injeção do HTML para garantir que .logo-img do menu existe no DOM
+        loadAppAssets();
       });
   }
 
@@ -58,7 +61,7 @@ import '../css/menu.css';
 
   // Inicialização automática
   document.addEventListener('DOMContentLoaded', function() {
-    loadMenu();
+    loadMenu(); // loadAppAssets é chamado dentro de loadMenu após injeção do HTML
   });
   // Header scroll effect
   function handleHeaderScroll() {

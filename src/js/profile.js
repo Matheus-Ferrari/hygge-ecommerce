@@ -1,4 +1,5 @@
 ﻿import { auth, db } from '../firebase/firebaseConfig.js';
+import { getProducts } from '../firebase/productService.js';
 import { onAuthStateChanged, updateProfile, signOut } from 'firebase/auth';
 import {
   collection,
@@ -15,6 +16,7 @@ import {
 
 const FAVORITES_KEY = 'hygge_favorites';
 const CEP_STORAGE_KEY = 'hygge_cep';
+const IMAGE_PLACEHOLDER = 'src/img/logo.png';
 
 async function buscarEnderecoPorCepPerfil(digits) {
   try {
@@ -59,27 +61,91 @@ function bindCepAutoPerfil() {
   });
 }
 
-const CATALOG_PRODUCTS = [
-  { slug: 'acertei-na-mosca', name: 'Acertei na Mosca?' },
-  { slug: 'vacilou-dancou', name: 'Vacilou, Dançou!' },
-  { slug: 'quem-na-roda', name: 'Quem na roda?' },
-  { slug: 'hygge-game', name: 'O Hygge Game' },
-  { slug: 'coisas-que-nao-ensinam-na-escola', name: 'Coisas que não ensinam na escola' },
-  { slug: 'eu-deveria-saber-isso', name: 'Eu deveria saber isso!' },
-];
+const slugify = (text) => {
+  const raw = (text || '').toString().trim();
+  const normalized = raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  let slug = normalized
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  if (slug === 'o-hygge-game') slug = 'hygge-game';
+  return slug;
+};
+
+function resolveStorageUrl(path) {
+  const raw = String(path || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (!raw.startsWith('gs://')) return '';
+
+  const withoutScheme = raw.slice('gs://'.length);
+  const slashIndex = withoutScheme.indexOf('/');
+  if (slashIndex === -1) return '';
+
+  const bucket = withoutScheme.slice(0, slashIndex);
+  const filePath = withoutScheme.slice(slashIndex + 1);
+  if (!bucket || !filePath) return '';
+
+  return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(filePath)}?alt=media`;
+}
+
+let firebaseProductsCache = null;
+
+async function getFirebaseProducts() {
+  if (firebaseProductsCache) return firebaseProductsCache;
+  try {
+    firebaseProductsCache = await getProducts();
+  } catch {
+    firebaseProductsCache = [];
+  }
+  return firebaseProductsCache;
+}
 
 function readFavorites() {
   try {
     const raw = localStorage.getItem(FAVORITES_KEY);
     const list = raw ? JSON.parse(raw) : [];
-    return Array.isArray(list) ? list.filter(Boolean) : [];
+    if (!Array.isArray(list)) return [];
+
+    return list
+      .map((item) => {
+        if (typeof item === 'string') {
+          return { slug: item, imagem: '' };
+        }
+
+        if (!item || typeof item !== 'object') return null;
+        return {
+          slug: String(item.slug || '').trim(),
+          imagem: String(item.imagem || '').trim(),
+        };
+      })
+      .filter((item) => item?.slug);
   } catch {
     return [];
   }
 }
 
 function writeFavorites(list) {
-  localStorage.setItem(FAVORITES_KEY, JSON.stringify(Array.from(new Set(list))));
+  const normalized = [];
+  const seen = new Set();
+
+  (Array.isArray(list) ? list : []).forEach((item) => {
+    const slug = String(item?.slug || '').trim();
+    if (!slug || seen.has(slug)) return;
+    seen.add(slug);
+    normalized.push({
+      slug,
+      imagem: String(item?.imagem || '').trim(),
+    });
+  });
+
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify(normalized));
 }
 
 function setText(id, value) {
@@ -239,12 +305,21 @@ async function loadUserOrders(user) {
   }
 }
 
-function renderFavorites() {
+async function renderFavorites() {
   const container = document.getElementById('favorites-list');
   const emptyEl = document.getElementById('favorites-empty');
   if (!container) return;
 
   const favs = readFavorites();
+  const products = await getFirebaseProducts();
+  const productsBySlug = new Map();
+
+  products.forEach((product) => {
+    const slug = slugify(product?.nome);
+    if (!slug) return;
+    productsBySlug.set(slug, product);
+  });
+
   container.innerHTML = '';
 
   if (!favs.length) {
@@ -254,12 +329,29 @@ function renderFavorites() {
 
   if (emptyEl) emptyEl.hidden = true;
 
-  favs.forEach((slug) => {
-    const product = CATALOG_PRODUCTS.find((p) => p.slug === slug);
-    const label = product?.name || slug;
+  const syncedFavs = [];
+
+  favs.forEach((fav) => {
+    const slug = fav.slug;
+    const product = productsBySlug.get(slug);
+    const label = product?.nome || slug;
+    const imageUrl = resolveStorageUrl(product?.imagemCapa) || fav.imagem || IMAGE_PLACEHOLDER;
+
+    syncedFavs.push({ slug, imagem: imageUrl });
 
     const row = document.createElement('div');
     row.className = 'profile-favItem';
+
+    const thumb = document.createElement('img');
+    thumb.className = 'profile-favItem__thumb';
+    thumb.src = imageUrl;
+    thumb.alt = `Imagem de ${label}`;
+    thumb.loading = 'lazy';
+    thumb.onerror = () => {
+      thumb.onerror = null;
+      thumb.src = IMAGE_PLACEHOLDER;
+      thumb.style.objectFit = 'contain';
+    };
 
     const link = document.createElement('a');
     link.href = `/produto?id=${encodeURIComponent(slug)}`;
@@ -269,18 +361,21 @@ function renderFavorites() {
     btn.type = 'button';
     btn.textContent = 'Remover';
     btn.addEventListener('click', () => {
-      const next = readFavorites().filter((x) => x !== slug);
+      const next = readFavorites().filter((item) => item.slug !== slug);
       writeFavorites(next);
       renderFavorites();
     });
 
+    row.appendChild(thumb);
     row.appendChild(link);
     row.appendChild(btn);
     container.appendChild(row);
   });
+
+  writeFavorites(syncedFavs);
 }
 
-function fillFavoritesSelect() {
+async function fillFavoritesSelect() {
   const select = document.getElementById('favorite-select');
   if (!select) return;
   select.innerHTML = '';
@@ -290,10 +385,13 @@ function fillFavoritesSelect() {
   opt0.textContent = 'Selecione um jogo…';
   select.appendChild(opt0);
 
-  CATALOG_PRODUCTS.forEach((p) => {
+  const products = await getFirebaseProducts();
+  products.forEach((p) => {
+    const slug = slugify(p?.nome);
+    if (!slug) return;
     const opt = document.createElement('option');
-    opt.value = p.slug;
-    opt.textContent = p.name;
+    opt.value = slug;
+    opt.textContent = String(p?.nome || slug);
     select.appendChild(opt);
   });
 }
@@ -341,6 +439,8 @@ function showLoggedInState() {
 document.addEventListener('DOMContentLoaded', () => {
   wireTabs();
   bindCepAutoPerfil();
+  fillFavoritesSelect();
+  renderFavorites();
 
   const logoutBtn = document.getElementById('logout-btn');
 

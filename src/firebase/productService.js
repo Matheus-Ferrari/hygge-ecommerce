@@ -21,17 +21,16 @@ export const getProducts = async () => {
         id: doc.id,
         nome: data.nome || "Produto sem nome",
         preco: 119,
-        // Se imagemCapa não existir, usa a primeira da galeria ou uma imagem padrão
-        imagemCapa: data.imagemCapa || (data.galeria && data.galeria[0]) || "caminho/para/placeholder.png",
-        // Compatibilidade com código antigo
-        imagemUrl: data.imagemCapa || (data.galeria && data.galeria[0]) || data.imagemUrl || "",
-        // Garante que galeria sempre seja um array para não quebrar o código do parceiro
-        galeria: data.galeria || [], 
+        imagemCapa: data.imagemCapa || "",
+        imagemUrl: data.imagemCapa || "",
+        galeria: Array.isArray(data.galeria) ? data.galeria : [],
         descricao: data.descricao || "",
         descricaoCurta: data.descricaoCurta || data.descricao_curta || "",
         descricaoCompleta,
         estoque: data.estoque || 0,
-        categoria: data.categoria || "Geral"
+        categoria: data.categoria || "Geral",
+        especificacoesJogo: data.especificacoesJogo || data.especificacoes_jogo || data.gameSpecs || null,
+        especificacoesTecnicas: data.especificacoesTecnicas || data.especificacoes_tecnicas || data.techSpecs || null,
       };
     });
     
