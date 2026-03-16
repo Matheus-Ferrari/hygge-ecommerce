@@ -6,8 +6,6 @@ const {MercadoPagoConfig, Preference, Payment} = require("mercadopago");
 const axios = require("axios");
 const {generateEmailTemplate} = require("./emailTemplates.cjs");
 
-
-
 /**
  * CONFIGURAÇÃO DE PARÂMETROS DE AMBIENTE
  */
@@ -57,7 +55,6 @@ function renderOrderItemsTable(items) {
 
 /**
  * Enfileira e-mail de confirmação de pedido na coleção "mail".
- * Uso esperado (exemplo): await sendOrderConfirmationEmail({ email, orderNumber, items, total, trackingUrl })
  */
 async function sendOrderConfirmationEmail({
   email,
@@ -155,7 +152,6 @@ async function findBestDraftForPayment({userId, paymentTotal, paymentItems}) {
       }
     });
 
-    // Rejeita matches claramente ruins (ex.: total muito diferente)
     if (best && best.score > 5000) return null;
     return best;
   } catch (err) {
@@ -274,7 +270,7 @@ const mpClient = new MercadoPagoConfig({
 });
 
 /**
- * 1. FUNÇÃO: Criar Preferência (Checkout)
+ * 1. FUNÇÃO: Criar Preferência (Checkout Mercado Pago)
  */
 exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
   if (req.method !== "POST") {
@@ -313,7 +309,65 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
 
 
 /**
- * 3. FUNÇÃO: Webhook de Notificação
+ * 2. FUNÇÃO: Cálculo de Frete (MELHOR ENVIO)
+ */
+exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
+  if (req.method !== "POST") return res.status(405).send("Método não permitido");
+  
+  try {
+    const {cepDestino, itens} = req.body;
+    
+    // Monta os dados para o Melhor Envio com base nos itens do carrinho
+    const payload = {
+      from: {postal_code: "06790030"}, // CEP de Origem da Hygge Games
+      to: {postal_code: cepDestino.replace(/\D/g, "")},
+      products: itens.map((item) => ({
+        id: item.id,
+        width: 15,
+        height: 6,
+        length: 15,
+        weight: 0.35, // Peso estimado por jogo
+        insurance_value: Number(item.preco),
+        quantity: item.quantidade,
+      })),
+      services: "1,2,17" // 1=PAC, 2=SEDEX, 17=Total Express Standard
+    };
+
+    const response = await axios.post(
+      "https://melhorenvio.com.br/api/v2/me/shipment/calculate",
+      payload,
+      {
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${melhorEnvioToken.value()}`,
+          "User-Agent": "HyggeGames (contato@hyggegames.com.br)",
+        },
+      }
+    );
+
+    // IDs Melhor Envio: 1=Correios PAC, 2=Correios SEDEX, 3=Jadlog .Package, 11=Total Express
+    // Filtra apenas os serviços disponíveis e com preço válido
+    const opcoes = response.data
+      .filter((s) => s.price != null && !s.error)
+      .map((s) => ({
+        id: s.id,
+        nome: s.name,
+        valor: Number(s.price),
+        prazo: s.delivery_range?.max ? `${s.delivery_range.max} dias úteis` : '',
+      }))
+      .sort((a, b) => a.valor - b.valor);
+
+    res.json(opcoes);
+  } catch (error) {
+    logger.error("Erro no cálculo de frete Melhor Envio:", error.message);
+    res.status(500).json({error: "Erro ao calcular frete oficial"});
+  }
+});
+
+
+/**
+ * 3. FUNÇÃO: Webhook de Notificação Mercado Pago
  */
 exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
   try {
