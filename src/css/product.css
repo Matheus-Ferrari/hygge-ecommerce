@@ -63,9 +63,9 @@
 
 .product-thumbnails {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 10px;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   max-width: 100%;
 }
@@ -349,8 +349,8 @@
   }
 
   .product-thumbnails {
-    flex-wrap: nowrap;
-    overflow-x: auto;
+    flex-wrap: wrap;
+    overflow-x: hidden;
     overflow-y: hidden;
     -ms-overflow-style: none;
     scrollbar-width: none;

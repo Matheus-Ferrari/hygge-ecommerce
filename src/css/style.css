@@ -1138,3 +1138,54 @@ body {
     width: 100%;
   }
 }
+/* ===================================================
+   CORREÇÕES MOBILE GLOBAIS
+   =================================================== */
+
+/* 1. Previne overflow horizontal na raiz */
+html {
+  overflow-x: hidden;
+}
+
+/* 2. Garante que imagens nunca ultrapassem o viewport — exceto logo do header */
+img:not(.logo):not(.logo-img), video, iframe, embed, object {
+  max-width: 100%;
+}
+
+/* 3. Corrige elementos com min-width fixo que causam overflow */
+@media (max-width: 768px) {
+  /* Seções com largura/posicionamento absolutos que causam overflow horizontal */
+  [style*="min-width"] {
+    min-width: 0 !important;
+  }
+
+  /* Seção "Seja um Revendedor" — padding lateral adequado no mobile */
+  section[style*="FAE696"],
+  .revendedor-section {
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+    left: auto !important;
+    right: auto !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    position: relative !important;
+  }
+
+  /* Garante que o texto interno da seção revendedor não toque as bordas */
+  section[style*="FAE696"] h2,
+  section[style*="FAE696"] p,
+  .revendedor-section h2,
+  .revendedor-section p {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Remove scroll interno das miniaturas do produto — empilha em vez de rolar */
+  .product-thumbnails {
+    flex-wrap: wrap;
+    overflow-x: hidden;
+    overflow-y: hidden;
+  }
+}
