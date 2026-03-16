@@ -858,7 +858,7 @@ export async function startCheckout() {
       })
     );
 
-    const pref = await iniciarPagamentoMP(carrinhoAtual, getCheckoutOwnerId());
+    const pref = await iniciarPagamentoMP(carrinhoAtual, getCheckoutOwnerId(), freteAtual);
     const initPoint = pref?.init_point || pref?.initPoint || '';
     if (!initPoint) {
       if (helper) helper.textContent = 'Não foi possível iniciar o pagamento agora. Tente novamente.';

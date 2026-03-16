@@ -279,17 +279,32 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
   }
 
   try {
-    const {itens, usuarioId} = req.body;
+    // 1. Agora extraímos o frete do corpo da requisição
+    const {itens, usuarioId, frete} = req.body;
     const preference = new Preference(mpClient);
 
-    const body = {
-      items: itens.map((item) => ({
-        id: item.id,
-        title: item.nome,
-        unit_price: Number(item.preco),
-        quantity: Number(item.quantidade),
+    // 2. Mapeia os itens do carrinho normalmente
+    const mpItems = itens.map((item) => ({
+      id: String(item.id),
+      title: String(item.nome),
+      unit_price: Number(item.preco),
+      quantity: Number(item.quantidade),
+      currency_id: "BRL",
+    }));
+
+    // 3. Se houver valor de frete, adiciona como um item extra na conta
+    if (Number(frete) > 0) {
+      mpItems.push({
+        id: "FRETE",
+        title: "Custo de Entrega",
+        unit_price: Number(frete),
+        quantity: 1,
         currency_id: "BRL",
-      })),
+      });
+    }
+
+    const body = {
+      items: mpItems, // Usamos a lista atualizada com o frete
       back_urls: {
         success: "https://e-commerce-hygge.firebaseapp.com/obrigado.html",
         failure: "https://e-commerce-hygge.firebaseapp.com/carrinho.html",
