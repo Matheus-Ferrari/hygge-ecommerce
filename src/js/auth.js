@@ -128,7 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Cria documento na coleção "mail" para disparo do e-mail de boas-vindas
       try {
-        const storeLink = 'https://e-commerce-hygge.firebaseapp.com//';
+        const storeLink = 'https://hyggegames.com.br/';
         await addDoc(collection(db, 'mail'), {
           to: email,
           message: {
@@ -155,12 +155,21 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Erro ao criar usuário no Firebase Auth:', error);
       if (errorDiv) {
         const code = String(error?.code || '');
+        const MENSAGENS_ERRO = {
+          'auth/email-already-in-use':  'Este e-mail já está cadastrado. Tente fazer login.',
+          'auth/invalid-email':         'Digite um e-mail válido.',
+          'auth/operation-not-allowed': 'Cadastro desativado temporariamente. Tente mais tarde.',
+          'auth/network-request-failed':'Sem conexão com a internet. Verifique sua rede e tente novamente.',
+          'auth/too-many-requests':     'Muitas tentativas. Aguarde alguns minutos e tente novamente.',
+          'auth/internal-error':        'Erro interno. Tente novamente em alguns instantes.',
+        };
+        let msg;
         if (code === 'auth/weak-password') {
-          const strengthMsg = avaliarForcaSenha(password).message;
-          errorDiv.textContent = strengthMsg || 'Senha fraca. Use uma senha mais forte.';
+          msg = avaliarForcaSenha(password).message || 'Senha fraca. Use uma senha mais forte.';
         } else {
-          errorDiv.textContent = error?.message || 'Erro ao criar conta. Tente novamente.';
+          msg = MENSAGENS_ERRO[code] ?? 'Não foi possível criar sua conta. Tente novamente.';
         }
+        errorDiv.textContent = msg;
       }
     }
   });

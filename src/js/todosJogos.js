@@ -66,6 +66,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           imgEl.style.objectFit = 'contain';
         };
       }
+
+      // Atualiza preço dinamicamente do banco
+      const precoEl = card.querySelector('.preco-destaque');
+      if (precoEl && produto?.preco != null) {
+        const preco = Number(produto.preco);
+        precoEl.textContent = preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      }
     }
   } catch (error) {
     console.error('Falha ao mapear produtos em todosJogos.js:', error);

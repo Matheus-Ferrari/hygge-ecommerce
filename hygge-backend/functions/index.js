@@ -10,7 +10,8 @@ const {generateEmailTemplate} = require("./emailTemplates.cjs");
  * CONFIGURAÇÃO DE PARÂMETROS DE AMBIENTE
  */
 const mpKeyParam = defineString("MP_KEY", {default: "TESTE"});
-const blingKeyParam = defineString("BLING_KEY", {default: "TESTE"});
+const blingClientId = defineString("BLING_CLIENT_ID");
+const blingClientSecret = defineString("BLING_CLIENT_SECRET");
 const melhorEnvioToken = defineString("MELHOR_ENVIO_TOKEN", {default: "TESTE"});
 
 // --- FUNÇÕES AUXILIARES DE FORMATAÇÃO E E-MAIL ---
@@ -85,7 +86,7 @@ async function sendOrderConfirmationEmail({
     title: "Pedido confirmado 🎲",
     message: "Agradecemos por comprar na Hygge Games. Seu pedido foi recebido e está sendo preparado.",
     buttonText: "Acompanhar pedido",
-    buttonLink: trackingUrl || "https://e-commerce-hygge.firebaseapp.com/perfil.html",
+    buttonLink: trackingUrl || "https://hyggegames.com.br/perfil",
     footerText: "Hygge Games • Obrigado por comprar com a gente.",
     contentHtml,
   });
@@ -304,14 +305,20 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
     }
 
     const body = {
-      items: mpItems, // Usamos a lista atualizada com o frete
+      items: mpItems,
       back_urls: {
-        success: "https://e-commerce-hygge.firebaseapp.com/obrigado.html",
-        failure: "https://e-commerce-hygge.firebaseapp.com/carrinho.html",
-        pending: "https://e-commerce-hygge.firebaseapp.com/pendente.html",
+        success: "https://hyggegames.com.br/obrigado",
+        failure: "https://hyggegames.com.br/carrinho",
+        pending: "https://hyggegames.com.br/pendente",
       },
       auto_return: "approved",
       external_reference: usuarioId,
+      // Permite pagamento como visitante (sem exigir conta MP)
+      payment_methods: {
+        excluded_payment_types: [],
+        excluded_payment_methods: [],
+        installments: 12,
+      },
     };
 
     const response = await preference.create({body});
@@ -449,7 +456,7 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
               orderNumber: paymentId,
               items,
               total,
-              trackingUrl: "https://e-commerce-hygge.firebaseapp.com/perfil.html",
+              trackingUrl: "https://hyggegames.com.br/perfil",
             });
 
             await markerRef.set(
@@ -482,41 +489,198 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
 });
 
 /**
- * 4. Bling Auxiliar
- * @param {object} dadosPagamento - Objeto de dados vindo do Mercado Pago.
+ * 4a. Bling OAuth2 — Gerenciador de Tokens (auto-refresh)
+ */
+async function obterTokenBling() {
+  const tokenDoc = db.collection("configuracoes").doc("bling_tokens");
+  const snap = await tokenDoc.get();
+
+  if (!snap.exists) {
+    throw new Error("Tokens do Bling não encontrados. Autorize primeiro via /callbackBling.");
+  }
+
+  const dados = snap.data();
+  const agora = Date.now();
+  // Renova se faltar menos de 60 s para expirar
+  const expiraEm = dados.expires_at?.toMillis?.() ?? dados.expires_at ?? 0;
+
+  if (dados.access_token && agora < expiraEm - 60000) {
+    return dados.access_token;
+  }
+
+  // Token expirado — usa refresh_token para obter um novo
+  if (!dados.refresh_token) {
+    throw new Error("Refresh token do Bling ausente. Reautorize via /callbackBling.");
+  }
+
+  const credentials = Buffer.from(
+    `${blingClientId.value()}:${blingClientSecret.value()}`,
+  ).toString("base64");
+
+  const params = new URLSearchParams();
+  params.append("grant_type", "refresh_token");
+  params.append("refresh_token", dados.refresh_token);
+
+  const resp = await axios.post(
+    "https://www.bling.com.br/Api/v3/oauth/token",
+    params.toString(),
+    {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": `Basic ${credentials}`,
+      },
+    },
+  );
+
+  const novosDados = resp.data;
+  const novaExpiracao = Date.now() + (novosDados.expires_in ?? 21600) * 1000;
+
+  await tokenDoc.set({
+    access_token: novosDados.access_token,
+    refresh_token: novosDados.refresh_token,
+    expires_in: novosDados.expires_in,
+    expires_at: new Date(novaExpiracao),
+    updated_at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  logger.info("Token do Bling renovado com sucesso.");
+  return novosDados.access_token;
+}
+
+/**
+ * 4b. Bling OAuth2 — Callback (troca code por tokens)
+ */
+exports.callbackBling = onRequest({cors: true}, async (req, res) => {
+  try {
+    const code = req.query.code;
+    if (!code) return res.status(400).send("Código ausente.");
+
+    const credentials = Buffer.from(
+      `${blingClientId.value()}:${blingClientSecret.value()}`,
+    ).toString("base64");
+
+    const params = new URLSearchParams();
+    params.append("grant_type", "authorization_code");
+    params.append("code", code);
+
+    const resp = await axios.post(
+      "https://www.bling.com.br/Api/v3/oauth/token",
+      params.toString(),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Authorization": `Basic ${credentials}`,
+        },
+      },
+    );
+
+    const dados = resp.data;
+    const expiraEm = Date.now() + (dados.expires_in || 21600) * 1000;
+
+    await db.collection("configuracoes").doc("bling_tokens").set({
+      access_token: dados.access_token,
+      refresh_token: dados.refresh_token,
+      expires_at: new Date(expiraEm),
+      expires_in: dados.expires_in,
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    res.status(200).send("<h1>Bling autorizado com sucesso!</h1><p>Agora o sistema pode enviar pedidos.</p>");
+  } catch (error) {
+    res.status(500).json({erro: error.message, detalhes: error.response?.data});
+  }
+});
+
+/**
+ * 4c. Bling Auxiliar — Enviar pedido (API v3)
  */
 async function enviarParaBling(dadosPagamento) {
-    const urlBling = "https://bling.com.br/Api/v2/pedido/json/";
-  
-    // Mapeia os itens do Mercado Pago para o formato do Bling
-    // O MP chama de 'additional_info.items', o Bling espera 'item'
-    const itensMapeados = dadosPagamento.additional_info.items.map((item) => ({
-      item: {
-        codigo: item.id,
-        descricao: item.title,
-        un: "un",
-        qtde: item.quantity,
-        vlr_unit: item.unit_price,
-      },
-    }));
-  
-    const pedidoBling = {
-      numero: dadosPagamento.id,
-      data: new Date().toLocaleDateString("pt-BR"),
-      cliente: {nome: "Cliente Hygge Games"},
-      itens: itensMapeados, // Agora a lista está preenchida!
+  try {
+    const token = await obterTokenBling();
+    const headers = {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
     };
-  
-    try {
-      const xmlData = encodeURIComponent(JSON.stringify(pedidoBling));
-      const finalUrl = `${urlBling}&apikey=${blingKeyParam.value()}` +
-                       `&xml=${xmlData}`;
-      await axios.post(finalUrl);
-      logger.info("Pedido registrado no Bling com sucesso.");
-    } catch (err) {
-      logger.error("Falha na integração com o Bling:", err.message);
+
+    // Passo 1: Buscar ou criar contato no Bling
+    const cpfCnpj = dadosPagamento.payer?.identification?.number;
+    const primeiroNome = dadosPagamento.payer?.first_name || "";
+    const ultimoNome = dadosPagamento.payer?.last_name || "";
+    const nomeContato = primeiroNome
+      ? `${primeiroNome} ${ultimoNome}`.trim()
+      : "Cliente E-commerce Hygge";
+
+    let idDoContato = null;
+
+    if (cpfCnpj) {
+      try {
+        const buscaResp = await axios.get(
+          `https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${cpfCnpj}`,
+          {headers},
+        );
+        if (buscaResp.data?.data?.length > 0) {
+          idDoContato = buscaResp.data.data[0].id;
+          logger.info(`Contato encontrado no Bling. ID: ${idDoContato}`);
+        }
+      } catch (err) {
+        logger.warn("Busca de contato no Bling falhou:", err.response?.data || err.message);
+      }
     }
+
+    if (!idDoContato) {
+      const tipoPessoa = (cpfCnpj && cpfCnpj.length > 11) ? "J" : "F";
+      const payloadContato = {
+        nome: nomeContato,
+        tipo: tipoPessoa,
+        situacao: "A",
+      };
+
+      if (cpfCnpj) {
+        payloadContato.numeroDocumento = cpfCnpj;
+      }
+
+      const criarResp = await axios.post(
+        "https://www.bling.com.br/Api/v3/contatos",
+        payloadContato,
+        {headers},
+      );
+      idDoContato = criarResp.data?.data?.id;
+      logger.info(`Contato criado no Bling. ID: ${idDoContato}`);
+    }
+
+    // Passo 2: Montar e enviar o pedido
+    const hoje = new Date().toISOString().split("T")[0];
+    const addr = dadosPagamento.additional_info?.shipment?.receiver_address;
+
+    const pedidoBling = {
+      contato: {id: idDoContato},
+      data: hoje,
+      dataSaida: hoje,
+      itens: dadosPagamento.additional_info.items.map((item) => ({
+        codigo: String(item.id),
+        descricao: String(item.title),
+        quantidade: Number(item.quantity),
+        valor: Number(item.unit_price),
+        unidade: "UN",
+      })),
+      transporte: {
+        endereco: addr?.street_name || "",
+        numero: String(addr?.street_number || ""),
+        complemento: addr?.apartment || "",
+        bairro: "",
+        cep: addr?.zip_code || "",
+        cidade: addr?.city_name || "",
+        uf: addr?.state_name || "",
+      },
+      observacoes: `Pedido originado no Site - MP ID: ${dadosPagamento.id}`,
+    };
+
+    await axios.post("https://www.bling.com.br/Api/v3/pedidos/vendas", pedidoBling, {headers});
+    logger.info(`Pedido ${dadosPagamento.id} registrado no Bling v3 com sucesso.`);
+  } catch (err) {
+    logger.error("Falha na integração com o Bling v3:", err.response?.data || err.message);
   }
+}
 
 /**
  * 5. FUNÇÃO: Solicitar redefinição de senha
@@ -550,7 +714,7 @@ exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => 
     let link;
     try {
       const actionCodeSettings = {
-        url: "https://e-commerce-hygge.firebaseapp.com/reset-password.html",
+        url: "https://hyggegames.com.br/reset-password",
         handleCodeInApp: true,
       };
       link = await admin.auth().generatePasswordResetLink(email, actionCodeSettings);
@@ -561,7 +725,7 @@ exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => 
       return;
     }
 
-    let resetLink = "https://e-commerce-hygge.firebaseapp.com/reset-password.html";
+    let resetLink = "https://hyggegames.com.br/reset-password";
     try {
       const urlObj = new URL(link);
       const oobCode = urlObj.searchParams.get("oobCode");
@@ -595,14 +759,8 @@ exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => 
   }
 });
 
-// firebase functions:config:set hygge.mp_key="SEU_TOKEN_MP"
-// firebase functions:config:set hygge.bling_key="SEU_TOKEN_BLING"
 // firebase deploy --only functions
 
-
-
 //Checkout: https://us-central1-e-commerce-hygge.cloudfunctions.net/criarPreferencia
-
-//Frete: https://us-central1-e-commerce-hygge.cloudfunctions.net/calcularFrete
-
-//Webhook (Para o Mercado Pago): https://us-central1-e-commerce-hygge.cloudfunctions.net/notificacaoPagamento
+//Frete:    https://us-central1-e-commerce-hygge.cloudfunctions.net/calcularFrete
+//Webhook:  https://us-central1-e-commerce-hygge.cloudfunctions.net/notificacaoPagamento

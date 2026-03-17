@@ -1,5 +1,7 @@
 ﻿
 import { obterCalculoFrete } from './checkoutService.js';
+import { validarCupom, aplicarBeneficioCupom } from '../firebase/couponService.js';
+import { getProducts } from '../firebase/productService.js';
 
 const CART_KEY = 'cart';
 const LEGACY_CART_KEY = 'carrinho';
@@ -8,7 +10,9 @@ const CHECKOUT_DRAFT_KEY = 'checkout_draft';
 const CART_IMAGE_FALLBACK = 'src/img/logo.png';
 
 let freteAtual = 0;
+let freteOriginal = 0;
 let cupomAplicado = null;
+let cupomResultado = null;
 let cepAtual = '';
 let mensagemFrete = '';
 let freteOpcoes = [];
@@ -35,6 +39,7 @@ function selecionarFrete(opcao) {
   if (!opcao) return;
   freteSelecionadoKey = getFreteKey(opcao);
   freteAtual = Number(opcao.valor || 0);
+  freteOriginal = freteAtual;
   mensagemFrete = opcao.prazo
     ? `${opcao.nome}: ${formatarPreco(freteAtual)} (${opcao.prazo})`
     : `${opcao.nome}: ${formatarPreco(freteAtual)}`;
@@ -63,7 +68,7 @@ function normalizarItem(item) {
     id: String(item?.id || ''),
     nome: String(item?.nome || 'Produto'),
     descricao: String(item?.descricao || 'Jogo de cartas Hygge Games.'),
-    preco: 119,
+    preco: Number(item?.preco) || 0,
     imagem: imagemOriginal || CART_IMAGE_FALLBACK,
     quantidade: Math.max(1, Number(item?.quantidade || 1)),
   };
@@ -106,8 +111,12 @@ function carregarEstadoDraft() {
     if (!draft) return;
 
     freteAtual = Number(draft.frete || 0);
+    freteOriginal = Number(draft.freteOriginal || draft.frete || 0);
     freteSelecionadoKey = String(draft.freteOpcaoId || draft.freteMetodo || draft.metodoEntrega || '');
-    cupomAplicado = draft.cupom ? String(draft.cupom).toUpperCase() : null;
+    cupomAplicado = draft.cupom ? String(draft.cupom) : null;
+    if (draft.cupomTipo === 'frete_gratis' && cupomAplicado) {
+      cupomResultado = { valido: true, tipo: 'frete_gratis', mensagem: 'Cupom aplicado: frete gr\u00e1tis!' };
+    }
     cepAtual = formatarCep(draft.cep || '');
   } catch {
     freteAtual = 0;
@@ -142,8 +151,15 @@ function calcularSubtotal(itens) {
 
 function getCupomDesconto(subtotal) {
   if (!cupomAplicado) return 0;
-  if (cupomAplicado === 'HYGGE10') return subtotal * 0.1;
+  if (cupomResultado?.valido && cupomResultado.tipo === 'desconto_percentual') {
+    return subtotal * (Number(cupomResultado.valor) || 0);
+  }
   return 0;
+}
+
+function getFreteComCupom() {
+  if (cupomResultado?.valido && cupomResultado.tipo === 'frete_gratis') return 0;
+  return freteAtual;
 }
 
 function renderCarrinhoVazio(container) {
@@ -268,10 +284,14 @@ function renderCupom(listaColuna, subtotal) {
   if (input && cupomAplicado) input.value = cupomAplicado;
 
   const desconto = getCupomDesconto(subtotal);
-  if (desconto > 0 && applied) {
+  const isFreteGratisCupom = cupomResultado?.valido && cupomResultado.tipo === 'frete_gratis';
+  if ((desconto > 0 || isFreteGratisCupom) && applied) {
+    const label = isFreteGratisCupom
+      ? `Cupom aplicado: frete grátis!`
+      : `Cupom aplicado: ${cupomAplicado}`;
     applied.innerHTML = `
       <div class="cart-coupon__applied">
-        <span>Cupom aplicado: ${cupomAplicado}</span>
+        <span>${label}</span>
         <button class="cart-coupon__remove" type="button">Remover</button>
       </div>
     `;
@@ -279,26 +299,56 @@ function renderCupom(listaColuna, subtotal) {
     const removerCupom = applied.querySelector('.cart-coupon__remove');
     removerCupom?.addEventListener('click', () => {
       cupomAplicado = null;
+      cupomResultado = null;
+      freteAtual = freteOriginal;
       renderCarrinho();
     });
   }
 
-  btn?.addEventListener('click', () => {
-    const codigo = String(input?.value || '').trim().toUpperCase();
+  btn?.addEventListener('click', async () => {
+    const codigo = String(input?.value || '').trim();
 
     if (!codigo) {
       cupomAplicado = null;
+      cupomResultado = null;
       if (feedback) feedback.textContent = 'Informe um código para aplicar.';
+      freteAtual = freteOriginal;
       renderCarrinho();
       return;
     }
 
-    if (codigo === 'HYGGE10') {
-      cupomAplicado = codigo;
-      if (feedback) feedback.textContent = 'Cupom aplicado: 10% de desconto.';
-    } else {
+    // Buscar no Firestore
+    if (btn) btn.disabled = true;
+    if (btn) btn.textContent = 'Validando...';
+    try {
+      const resultado = await validarCupom(codigo);
+      if (resultado.valido) {
+        cupomAplicado = codigo;
+        cupomResultado = resultado;
+        if (feedback) {
+          feedback.textContent = resultado.mensagem;
+          feedback.style.color = '#2e7d32';
+        }
+      } else {
+        cupomAplicado = null;
+        cupomResultado = null;
+        freteAtual = freteOriginal;
+        if (feedback) {
+          feedback.textContent = resultado.mensagem;
+          feedback.style.color = '#c62828';
+        }
+      }
+    } catch {
       cupomAplicado = null;
-      if (feedback) feedback.textContent = 'Código inválido. Tente novamente.';
+      cupomResultado = null;
+      freteAtual = freteOriginal;
+      if (feedback) {
+        feedback.textContent = 'Erro ao validar cupom. Tente novamente.';
+        feedback.style.color = '#c62828';
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+      if (btn) btn.textContent = 'Aplicar';
     }
 
     renderCarrinho();
@@ -310,7 +360,9 @@ function renderCupom(listaColuna, subtotal) {
 function renderResumo(container, itens) {
   const subtotal = calcularSubtotal(itens);
   const desconto = getCupomDesconto(subtotal);
-  const total = Math.max(0, subtotal + freteAtual - desconto);
+  const freteEfetivo = getFreteComCupom();
+  const isFreteGratis = cupomResultado?.valido && cupomResultado.tipo === 'frete_gratis';
+  const total = Math.max(0, subtotal + freteEfetivo - desconto);
 
   const freteCardsHtml = freteOpcoes.length
     ? `
@@ -340,7 +392,7 @@ function renderResumo(container, itens) {
   aside.innerHTML = `
     <h3 class="product-card__title cart-summary__title">Resumo do pedido</h3>
     <div class="cart-summary__line"><span>Subtotal</span><strong>${formatarPreco(subtotal)}</strong></div>
-    <div class="cart-summary__line"><span>Frete</span><strong>${freteAtual ? formatarPreco(freteAtual) : '--'}</strong></div>
+    <div class="cart-summary__line"><span>Frete</span><strong>${isFreteGratis ? '<span style="color:#2e7d32">Gr\u00e1tis</span>' : (freteEfetivo ? formatarPreco(freteEfetivo) : '--')}</strong></div>
     <label for="cep-input" class="cart-summary__label">CEP</label>
     <div class="cart-summary__shippingRow">
       <input id="cep-input" type="text" maxlength="9" placeholder="00000-000" class="cart-summary__cep" value="${cepAtual}" />
@@ -385,13 +437,15 @@ function renderResumo(container, itens) {
     salvarDraftCheckout({
       itens,
       subtotal,
-      frete: freteAtual,
+      frete: freteEfetivo,
+      freteOriginal: freteAtual,
       freteOpcaoId: opcaoSelecionada ? getFreteKey(opcaoSelecionada) : null,
       freteMetodo: opcaoSelecionada?.nome || null,
       fretePrazo: opcaoSelecionada?.prazo || null,
       desconto,
       total,
       cupom: cupomAplicado || null,
+      cupomTipo: cupomResultado?.tipo || null,
       cep: cepAtual,
       criadoEm: Date.now(),
     });
@@ -436,7 +490,35 @@ function renderCarrinho() {
   root.appendChild(layout);
 }
 
+async function sincronizarPrecosFirestore() {
+  try {
+    const produtos = await getProducts();
+    if (!Array.isArray(produtos) || !produtos.length) return;
+
+    const itens = lerCarrinho();
+    if (!itens.length) return;
+
+    let alterou = false;
+    const atualizados = itens.map((item) => {
+      const firestoreItem = produtos.find((p) => p.id === item.id);
+      if (firestoreItem && Number(firestoreItem.preco) > 0 && Number(firestoreItem.preco) !== Number(item.preco)) {
+        alterou = true;
+        return { ...item, preco: Number(firestoreItem.preco) };
+      }
+      return item;
+    });
+
+    if (alterou) {
+      salvarCarrinho(atualizados);
+      renderCarrinho();
+    }
+  } catch (err) {
+    console.warn('Não foi possível sincronizar preços do carrinho:', err);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   carregarEstadoDraft();
   renderCarrinho();
+  sincronizarPrecosFirestore();
 });

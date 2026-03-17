@@ -11,7 +11,7 @@ const BRAND = {
   border: '#e2dcd6',
   shadow: '0 8px 32px 0 rgba(0,0,0,0.10)',
   radius: '20px',
-  logoUrl: 'https://e-commerce-hygge.firebaseapp.com/src/img/logo.png',
+  logoUrl: 'https://hyggegames.com.br/img/logopreta.png',
 };
 
 function escapeHtml(value) {

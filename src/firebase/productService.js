@@ -20,7 +20,7 @@ export const getProducts = async () => {
       return {
         id: doc.id,
         nome: data.nome || "Produto sem nome",
-        preco: 119,
+        preco: Number(data.preco ?? data.price ?? data.valor ?? data.precoVenda ?? 0) || 0,
         imagemCapa: data.imagemCapa || "",
         imagemUrl: data.imagemCapa || "",
         galeria: Array.isArray(data.galeria) ? data.galeria : [],

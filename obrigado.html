@@ -78,12 +78,29 @@
 
         const format = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+        const itensHtml = itens.map((item) => {
+          const nome = String(item?.nome || 'Produto');
+          const img = String(item?.imagem || '/img/logopreta.png');
+          const qtd = Number(item?.quantidade ?? 1);
+          const preco = Number(item?.preco ?? 0);
+          return `
+            <div style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #e2dcd6;">
+              <img src="${img}" alt="${nome}" style="width:58px; height:58px; object-fit:cover; border-radius:10px; flex-shrink:0; background:#ece7e0;" onerror="this.src='/img/logopreta.png'" />
+              <div style="flex:1; min-width:0;">
+                <p style="margin:0 0 3px 0; font-weight:600; font-size:0.97rem; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${nome}</p>
+                <p style="margin:0; color:#666; font-size:0.88rem;">Qtd: ${qtd} &nbsp;·&nbsp; ${format(preco)}</p>
+              </div>
+            </div>`;
+        }).join('');
+
         summaryEl.innerHTML = `
-          <p style="margin:0 0 8px 0;"><strong>Itens:</strong> ${itens.length}</p>
-          <p style="margin:0 0 6px 0;">Subtotal: <strong>${format(subtotal)}</strong></p>
-          <p style="margin:0 0 6px 0;">Frete: <strong>${format(frete)}</strong></p>
-          ${(freteMetodo || metodoEntrega) ? `<p style="margin:0 0 6px 0;">Entrega: <strong>${(metodoEntrega === 'retirada') ? 'Retirada' : (freteMetodo || metodoEntrega)}</strong></p>` : ''}
-          <p style="margin:0;">Total: <strong>${format(total)}</strong></p>
+          ${itensHtml}
+          <div style="margin-top:12px; display:flex; flex-direction:column; gap:4px;">
+            <p style="margin:0; font-size:0.95rem;">Subtotal: <strong>${format(subtotal)}</strong></p>
+            <p style="margin:0; font-size:0.95rem;">Frete: <strong>${frete > 0 ? format(frete) : 'Grátis'}</strong></p>
+            ${(freteMetodo || metodoEntrega) ? `<p style="margin:0; font-size:0.95rem;">Entrega: <strong>${(metodoEntrega === 'retirada') ? 'Retirada' : (freteMetodo || metodoEntrega)}</strong></p>` : ''}
+            <p style="margin:4px 0 0 0; font-size:1.05rem; border-top:1px solid #d9d3cc; padding-top:8px;">Total: <strong>${format(total)}</strong></p>
+          </div>
         `;
       } catch {
         // Mantém fallback padrão.

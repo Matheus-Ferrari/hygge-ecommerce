@@ -30,7 +30,7 @@ export const registerUser = async (email, password, userData) => {
 
     const userName = userData.name || userData.nome || "";
 
-    const storeLink = "https://e-commerce-hygge.firebaseapp.com/index.html";
+    const storeLink = "https://hyggegames.com.br/";
 
     // O parâmetro 'userData.endereco' deve conter as chaves citadas no comentário acima
     // para manter a consistência com o campo 'map' do banco

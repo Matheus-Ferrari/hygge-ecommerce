@@ -53,6 +53,10 @@ function getField(data, key, aliases = []) {
 function applyHeaderScrollState() {
   const header = document.querySelector('.header');
   if (!header) return;
+  if (document.body.classList.contains('page-carrinho') || document.body.classList.contains('page-checkout')) {
+    header.classList.add('solid');
+    return;
+  }
   header.classList.toggle('solid', window.scrollY > 10);
 }
 
@@ -78,6 +82,9 @@ export async function loadAppAssets() {
       { key: 'bannerProdutos',         aliases: ['banner_produtos'] },
       { key: 'bannerSobreHygge',       aliases: ['bannerSobre', 'banner_sobre_hygge'] },
       { key: 'bannerSobreHyggeMobile', aliases: ['bannerSobreMobile', 'banner_sobre_hygge_mobile'] },
+      { key: 'pngsobrehygge1',         aliases: ['png_sobre_hygge1'] },
+      { key: 'pngsobrehygge2',         aliases: ['png_sobre_hygge2'] },
+      { key: 'pngsobrehygge3',         aliases: ['png_sobre_hygge3'] },
     ];
 
     // Resolve todas as URLs em paralelo via getFirebaseUrl (getDownloadURL para gs://)
@@ -104,6 +111,9 @@ export async function loadAppAssets() {
     const bannerProdutos = isMobile ? (bannerHome || resolved.bannerProdutos) : (resolved.bannerProdutos || bannerHome);
     applyImageSrc(document.getElementById('banner-produtos'), bannerProdutos);
     applyImageSrc(document.getElementById('banner-sobre'), bannerSobre);
+    applyImageSrc(document.getElementById('icone-sobre1'), resolved.pngsobrehygge1);
+    applyImageSrc(document.getElementById('icone-sustentabilidade'), resolved.pngsobrehygge2);
+    applyImageSrc(document.getElementById('icone-producao'), resolved.pngsobrehygge3);
   } catch (error) {
     console.error('[Assets] Falha em loadAppAssets:', error);
   }

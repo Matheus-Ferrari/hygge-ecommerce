@@ -22,8 +22,9 @@ const GAME_SPECS_OVERRIDES = {
   'quem-na-roda': { Idade: '17+ anos', Jogadores: '3+', 'Duração': '20–30 minutos' },
 };
 
-const BASE_PRICE = 119;
 const IMAGE_PLACEHOLDER = 'src/img/logo.png';
+
+let currentProductPrice = 0;
 
 const formatPrice = (value) =>
   Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -128,7 +129,7 @@ const updateTotalPrice = () => {
   if (!qtyEl || !priceEl) return;
 
   const qty = Math.max(1, Math.floor(Number(qtyEl.textContent || 1)));
-  priceEl.textContent = formatPrice(BASE_PRICE * qty);
+  priceEl.textContent = formatPrice(currentProductPrice * qty);
 };
 
 const readCart = () => {
@@ -158,7 +159,7 @@ const addToCart = (product, quantity) => {
     cart.push({
       id: product.id,
       nome: product.nome,
-      preco: BASE_PRICE,
+      preco: Number(product.preco) || 0,
       quantidade: qtyToAdd,
       imagem: safeText(product.imagemCapa).trim() || IMAGE_PLACEHOLDER,
     });
@@ -236,7 +237,8 @@ const renderProduct = (product) => {
     qtyEl.dataset.max = '99';
   }
 
-  if (priceEl) priceEl.textContent = formatPrice(BASE_PRICE);
+  currentProductPrice = Number(product.preco) || 0;
+  if (priceEl) priceEl.textContent = formatPrice(currentProductPrice);
 
   if (fullDescEl) {
     fullDescEl.innerHTML = '';
@@ -367,6 +369,7 @@ const init = async () => {
   const product = {
     id: slug,
     nome: safeText(fromFirebase.nome),
+    preco: Number(fromFirebase.preco) || 0,
     descricao: safeText(fromFirebase.descricao),
     descricaoCurta: safeText(fromFirebase.descricaoCurta),
     descricaoCompleta: fromFirebase.descricaoCompleta,

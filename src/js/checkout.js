@@ -1,5 +1,7 @@
 ﻿import { auth, db } from '../firebase/firebaseConfig.js';
 import { iniciarPagamentoMP, obterCalculoFrete } from './checkoutService.js';
+import { validarCupom } from '../firebase/couponService.js';
+import { getProducts } from '../firebase/productService.js';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
@@ -14,11 +16,13 @@ let usuarioAtual = null;
 let carrinhoAtual = [];
 let subtotalAtual = 0;
 let freteAtual = 0;
+let freteOriginal = 0;
 let freteOpcoes = [];
 let freteSelecionadoKey = '';
 let fretePrazoSelecionado = '';
 let freteDebounceId = null;
 let cupomAplicado = null;
+let cupomResultado = null;
 let checkoutEmAndamento = false;
 let customerMode = 'edit';
 
@@ -135,6 +139,7 @@ function selecionarFrete(opcao) {
   if (!opcao) return;
   freteSelecionadoKey = getFreteKey(opcao);
   freteAtual = Number(opcao.valor || 0);
+  freteOriginal = freteAtual;
   fretePrazoSelecionado = String(opcao.prazo || '').trim();
 }
 
@@ -259,7 +264,7 @@ function normalizarItem(item) {
     id: String(item?.id || ''),
     nome: String(item?.nome || 'Produto'),
     descricao: String(item?.descricao || 'Jogo de cartas Hygge Games.'),
-    preco: 119,
+    preco: Number(item?.preco) || 0,
     imagem: String(item?.imagem || 'src/img/logo.png'),
     quantidade: Math.max(1, Number(item?.quantidade || 1)),
   };
@@ -271,12 +276,19 @@ function calcularSubtotal(itens) {
 
 function getCupomDesconto() {
   if (!cupomAplicado) return 0;
-  if (cupomAplicado === 'HYGGE10') return subtotalAtual * 0.1;
+  if (cupomResultado?.valido && cupomResultado.tipo === 'desconto_percentual') {
+    return subtotalAtual * (Number(cupomResultado.valor) || 0);
+  }
   return 0;
 }
 
+function getFreteEfetivo() {
+  if (cupomResultado?.valido && cupomResultado.tipo === 'frete_gratis') return 0;
+  return freteAtual;
+}
+
 function getTotal() {
-  return Math.max(0, subtotalAtual + freteAtual - getCupomDesconto());
+  return Math.max(0, subtotalAtual + getFreteEfetivo() - getCupomDesconto());
 }
 
 function getSelectedDeliveryMethod() {
@@ -300,7 +312,9 @@ function atualizarTotais() {
   const discountEl = document.getElementById('summary-discount');
 
   if (subtotalEl) subtotalEl.textContent = formatarPreco(subtotalAtual);
-  if (freteEl) freteEl.textContent = formatarPreco(freteAtual);
+  const isFreteGratis = cupomResultado?.valido && cupomResultado.tipo === 'frete_gratis';
+  if (freteEl) freteEl.textContent = isFreteGratis ? 'Gr\u00e1tis' : formatarPreco(freteAtual);
+  if (isFreteGratis && freteEl) freteEl.style.color = '#2e7d32';
 
   const desconto = getCupomDesconto();
   if (discountRow && discountEl) {
@@ -321,7 +335,10 @@ function carregarDraft() {
     const draft = raw ? JSON.parse(raw) : null;
     if (!draft) return;
 
-    cupomAplicado = draft.cupom ? String(draft.cupom).toUpperCase() : null;
+    cupomAplicado = draft.cupom ? String(draft.cupom) : null;
+    if (draft.cupomTipo === 'frete_gratis' && cupomAplicado) {
+      cupomResultado = { valido: true, tipo: 'frete_gratis', mensagem: 'Cupom aplicado: frete grátis!' };
+    }
     if (draft.freteOpcaoId || draft.freteMetodo || draft.metodoEntregaId || draft.metodoEntrega) {
       freteSelecionadoKey = String(
         draft.freteOpcaoId || draft.metodoEntregaId || draft.metodoEntrega || draft.freteMetodo || ''
@@ -331,12 +348,14 @@ function carregarDraft() {
     if (Number.isFinite(Number(draft.frete)) && Number(draft.frete) >= 0) {
       freteAtual = Number(draft.frete);
     }
+    freteOriginal = Number(draft.freteOriginal || draft.frete || 0);
 
     if (draft.fretePrazo) {
       fretePrazoSelecionado = String(draft.fretePrazo || '').trim();
     }
   } catch {
     cupomAplicado = null;
+    cupomResultado = null;
   }
 }
 
@@ -541,11 +560,13 @@ async function upsertOrderDraft(customerData) {
     cep: customerData.cep,
     produtos: carrinhoAtual,
     subtotal: subtotalAtual,
-    frete: freteAtual,
+    frete: getFreteEfetivo(),
+    freteOriginal: freteAtual,
     freteOpcaoId: selectedOption ? getFreteKey(selectedOption) : (methodKey || null),
     freteMetodo: methodName,
     fretePrazo: selectedOption?.prazo || null,
     cupom: cupomAplicado || null,
+    cupomTipo: cupomResultado?.tipo || null,
     total: getTotal(),
     complemento: customerData.complemento,
     metodoEntrega: methodName || (methodKey || null),
@@ -582,14 +603,19 @@ function renderCheckoutCouponState() {
   if (!stateEl) return;
 
   const desconto = getCupomDesconto();
-  if (!cupomAplicado || desconto <= 0) {
+  const isFreteGratis = cupomResultado?.valido && cupomResultado.tipo === 'frete_gratis';
+  if (!cupomAplicado || (desconto <= 0 && !isFreteGratis)) {
     stateEl.innerHTML = '';
     return;
   }
 
+  const label = isFreteGratis
+    ? 'Cupom aplicado: frete grátis!'
+    : `Cupom aplicado: ${cupomAplicado}`;
+
   stateEl.innerHTML = `
     <div class="cart-coupon__applied">
-      <span>Cupom aplicado: ${cupomAplicado}</span>
+      <span>${label}</span>
       <button id="checkout-coupon-remove" class="cart-coupon__remove" type="button">Remover</button>
     </div>
   `;
@@ -597,6 +623,8 @@ function renderCheckoutCouponState() {
   const removeBtn = document.getElementById('checkout-coupon-remove');
   removeBtn?.addEventListener('click', () => {
     cupomAplicado = null;
+    cupomResultado = null;
+    freteAtual = freteOriginal;
     const input = document.getElementById('checkout-coupon-input');
     if (input) input.value = '';
     atualizarTotais();
@@ -696,28 +724,45 @@ function bindCouponEvents() {
 
   if (input && cupomAplicado) input.value = cupomAplicado;
 
-  btn?.addEventListener('click', () => {
-    const code = String(input?.value || '').trim().toUpperCase();
+  btn?.addEventListener('click', async () => {
+    const code = String(input?.value || '').trim();
     if (helper) helper.textContent = '';
 
     if (!code) {
       cupomAplicado = null;
+      cupomResultado = null;
+      freteAtual = freteOriginal;
       renderCheckoutCouponState();
       atualizarTotais();
       return;
     }
 
-    if (code === 'HYGGE10') {
-      cupomAplicado = code;
-      renderCheckoutCouponState();
-      atualizarTotais();
-      return;
+    // Buscar no Firestore
+    if (btn) btn.disabled = true;
+    if (btn) btn.textContent = 'Validando...';
+    try {
+      const resultado = await validarCupom(code);
+      if (resultado.valido) {
+        cupomAplicado = code;
+        cupomResultado = resultado;
+      } else {
+        cupomAplicado = null;
+        cupomResultado = null;
+        freteAtual = freteOriginal;
+        if (helper) helper.textContent = resultado.mensagem;
+      }
+    } catch {
+      cupomAplicado = null;
+      cupomResultado = null;
+      freteAtual = freteOriginal;
+      if (helper) helper.textContent = 'Erro ao validar cupom. Tente novamente.';
+    } finally {
+      if (btn) btn.disabled = false;
+      if (btn) btn.textContent = 'Aplicar';
     }
 
-    cupomAplicado = null;
     renderCheckoutCouponState();
     atualizarTotais();
-    if (helper) helper.textContent = 'Código promocional inválido.';
   });
 }
 
@@ -825,13 +870,15 @@ export async function startCheckout() {
         userId: ownerId,
         itens: carrinhoAtual,
         subtotal: subtotalAtual,
-        frete: freteAtual,
+        frete: getFreteEfetivo(),
+        freteOriginal: freteAtual,
         freteOpcaoId: selectedOption ? getFreteKey(selectedOption) : (methodKey || null),
         freteMetodo: selectedOption?.nome || null,
         fretePrazo: selectedOption?.prazo || null,
         desconto: getCupomDesconto(),
         total,
         cupom: cupomAplicado || null,
+        cupomTipo: cupomResultado?.tipo || null,
         metodoEntregaId: methodKey || null,
         metodoEntrega: selectedOption?.nome || (methodKey || null),
         criadoEm: Date.now(),
@@ -844,13 +891,15 @@ export async function startCheckout() {
         userId: ownerId,
         itens: carrinhoAtual,
         subtotal: subtotalAtual,
-        frete: freteAtual,
+        frete: getFreteEfetivo(),
+        freteOriginal: freteAtual,
         freteOpcaoId: selectedOption ? getFreteKey(selectedOption) : (methodKey || null),
         freteMetodo: selectedOption?.nome || null,
         fretePrazo: selectedOption?.prazo || null,
         desconto: getCupomDesconto(),
         total,
         cupom: cupomAplicado || null,
+        cupomTipo: cupomResultado?.tipo || null,
         cep: customerData.cep,
         metodoEntregaId: methodKey || null,
         metodoEntrega: selectedOption?.nome || (methodKey || null),
@@ -858,7 +907,7 @@ export async function startCheckout() {
       })
     );
 
-    const pref = await iniciarPagamentoMP(carrinhoAtual, getCheckoutOwnerId(), freteAtual);
+    const pref = await iniciarPagamentoMP(carrinhoAtual, getCheckoutOwnerId(), getFreteEfetivo());
     const initPoint = pref?.init_point || pref?.initPoint || '';
     if (!initPoint) {
       if (helper) helper.textContent = 'Não foi possível iniciar o pagamento agora. Tente novamente.';
@@ -967,6 +1016,32 @@ async function initCustomerCard() {
   setCustomerMode('edit');
 }
 
+async function sincronizarPrecosFirestore() {
+  try {
+    const produtos = await getProducts();
+    if (!Array.isArray(produtos) || !produtos.length) return;
+    if (!carrinhoAtual.length) return;
+
+    let alterou = false;
+    carrinhoAtual = carrinhoAtual.map((item) => {
+      const firestoreItem = produtos.find((p) => p.id === item.id);
+      if (firestoreItem && Number(firestoreItem.preco) > 0 && Number(firestoreItem.preco) !== Number(item.preco)) {
+        alterou = true;
+        return { ...item, preco: Number(firestoreItem.preco) };
+      }
+      return item;
+    });
+
+    if (alterou) {
+      localStorage.setItem(CART_KEY, JSON.stringify(carrinhoAtual));
+      subtotalAtual = calcularSubtotal(carrinhoAtual);
+      renderOrderSummary();
+    }
+  } catch (err) {
+    console.warn('N\u00e3o foi poss\u00edvel sincronizar pre\u00e7os:', err);
+  }
+}
+
 function init() {
   const loginAnchor = document.querySelector('#checkout-login-message a');
   if (loginAnchor) loginAnchor.setAttribute('href', '/login?redirect=checkout');
@@ -982,6 +1057,7 @@ function init() {
   renderCheckoutCouponState();
   bindCheckoutAction();
   initAuth();
+  sincronizarPrecosFirestore();
 }
 
 document.addEventListener('DOMContentLoaded', init);
