@@ -104,7 +104,8 @@ function getCheckoutOwnerId() {
     // ignore
   }
 
-  const created = `guest_${createRandomId()}`;
+  // Regra: guest persistente, formato guest_TIMESTAMP_HASH
+  const created = `guest_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   try {
     localStorage.setItem(CHECKOUT_OWNER_KEY, created);
   } catch {
@@ -406,6 +407,7 @@ function getCustomerFormData() {
     nome: String(document.getElementById('nome')?.value || '').trim(),
     email: String(document.getElementById('email')?.value || '').trim(),
     telefone: String(document.getElementById('telefone')?.value || '').trim(),
+    cpf: String(document.getElementById('cpf')?.value || '').trim(),
     cep: String(document.getElementById('cep')?.value || '').trim(),
     endereco: String(document.getElementById('endereco')?.value || '').trim(),
     numero: String(document.getElementById('numero')?.value || '').trim(),
@@ -439,7 +441,7 @@ function carregarRascunhoCliente() {
 
 function preencherFormularioCliente(data) {
   if (!data) return;
-  const ids = ['nome', 'email', 'telefone', 'cep', 'endereco', 'numero', 'complemento', 'cidade', 'estado'];
+  const ids = ['nome', 'email', 'telefone', 'cpf', 'cep', 'endereco', 'numero', 'complemento', 'cidade', 'estado'];
   ids.forEach((id) => {
     const input = document.getElementById(id);
     if (!input || data[id] == null) return;
@@ -448,13 +450,19 @@ function preencherFormularioCliente(data) {
 }
 
 function validateCustomerData(data) {
-  const obrigatorios = ['nome', 'email', 'telefone', 'cep', 'endereco', 'numero', 'cidade', 'estado'];
+  const obrigatorios = ['nome', 'email', 'telefone', 'cpf', 'cep', 'endereco', 'numero', 'cidade', 'estado'];
   const faltando = obrigatorios.find((campo) => !String(data[campo] || '').trim());
 
   if (faltando) return { ok: false, message: 'Preencha todos os dados do cliente.' };
   if (!data.email.includes('@')) return { ok: false, message: 'Informe um email válido.' };
   if (somenteDigitos(data.cep).length !== 8) return { ok: false, message: 'Informe um CEP válido com 8 dígitos.' };
   if (somenteDigitos(data.telefone).length < 10) return { ok: false, message: 'Informe um telefone válido com DDD.' };
+  {
+    const docDigits = somenteDigitos(data.cpf);
+    if (!(docDigits.length === 11 || docDigits.length === 14)) {
+      return { ok: false, message: 'Informe um CPF/CNPJ válido.' };
+    }
+  }
 
   return { ok: true };
 }
@@ -467,11 +475,29 @@ function renderCustomerReadonly(data) {
     <div class="checkout-readonly__item"><p class="checkout-readonly__label">Nome</p><p class="checkout-readonly__value">${data.nome}</p></div>
     <div class="checkout-readonly__item"><p class="checkout-readonly__label">Email</p><p class="checkout-readonly__value">${data.email}</p></div>
     <div class="checkout-readonly__item"><p class="checkout-readonly__label">Telefone</p><p class="checkout-readonly__value">${data.telefone}</p></div>
+    <div class="checkout-readonly__item"><p class="checkout-readonly__label">CPF</p><p class="checkout-readonly__value">${data.cpf}</p></div>
     <div class="checkout-readonly__item"><p class="checkout-readonly__label">CEP</p><p class="checkout-readonly__value">${data.cep}</p></div>
     <div class="checkout-readonly__item checkout-readonly__item--full"><p class="checkout-readonly__label">Endereço</p><p class="checkout-readonly__value">${data.endereco}, ${data.numero}${data.complemento ? ` - ${data.complemento}` : ''}</p></div>
     <div class="checkout-readonly__item"><p class="checkout-readonly__label">Cidade</p><p class="checkout-readonly__value">${data.cidade}</p></div>
     <div class="checkout-readonly__item"><p class="checkout-readonly__label">Estado</p><p class="checkout-readonly__value">${data.estado}</p></div>
   `;
+}
+
+function mascararCpfCnpj(value) {
+  const digits = somenteDigitos(value).slice(0, 14);
+  if (digits.length <= 11) {
+    // CPF: 000.000.000-00
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+    if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+  }
+  // CNPJ: 00.000.000/0000-00
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  if (digits.length <= 8) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`;
+  if (digits.length <= 12) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
 }
 
 function setCustomerMode(mode) {
@@ -553,11 +579,30 @@ async function upsertOrderDraft(customerData) {
     nome: customerData.nome,
     email: customerData.email,
     telefone: customerData.telefone,
+    cpf: somenteDigitos(customerData.cpf),
     endereco: `${customerData.endereco}, ${customerData.numero}${customerData.complemento ? ` - ${customerData.complemento}` : ''}`,
     numero: customerData.numero,
     cidade: customerData.cidade,
     estado: customerData.estado,
     cep: customerData.cep,
+    cliente: {
+      nome: customerData.nome,
+      email: customerData.email,
+      telefone: customerData.telefone,
+      cpf: somenteDigitos(customerData.cpf),
+    },
+    dadosEntrega: {
+      endereco: customerData.endereco,
+      numero: customerData.numero,
+      complemento: customerData.complemento,
+      cidade: customerData.cidade,
+      estado: customerData.estado,
+      cep: customerData.cep,
+      metodoEntrega: methodName || (methodKey || null),
+      metodoEntregaId: methodKey || null,
+      freteMetodo: methodName,
+      fretePrazo: selectedOption?.prazo || null,
+    },
     produtos: carrinhoAtual,
     subtotal: subtotalAtual,
     frete: getFreteEfetivo(),
@@ -801,6 +846,7 @@ function bindCustomerEvents() {
 
   const cepInput = document.getElementById('cep');
   const telefoneInput = document.getElementById('telefone');
+  const cpfInput = document.getElementById('cpf');
   cepInput?.addEventListener('input', () => {
     cepInput.value = mascararCep(cepInput.value);
     salvarRascunhoCliente();
@@ -812,8 +858,12 @@ function bindCustomerEvents() {
     telefoneInput.value = mascararTelefone(telefoneInput.value);
     salvarRascunhoCliente();
   });
+  cpfInput?.addEventListener('input', () => {
+    cpfInput.value = mascararCpfCnpj(cpfInput.value);
+    salvarRascunhoCliente();
+  });
 
-  const ids = ['nome', 'email', 'telefone', 'cep', 'endereco', 'numero', 'complemento', 'cidade', 'estado'];
+  const ids = ['nome', 'email', 'telefone', 'cpf', 'cep', 'endereco', 'numero', 'complemento', 'cidade', 'estado'];
   ids.forEach((id) => {
     const input = document.getElementById(id);
     input?.addEventListener('blur', salvarRascunhoCliente);
@@ -907,7 +957,38 @@ export async function startCheckout() {
       })
     );
 
-    const pref = await iniciarPagamentoMP(carrinhoAtual, getCheckoutOwnerId(), getFreteEfetivo());
+    // Captura o valor do campo de CPF
+    const cpfValor = document.getElementById('cpf')?.value.trim();
+
+    // Monta o objeto cliente incluindo o CPF
+    const cliente = {
+      nome: customerData.nome,
+      email: customerData.email,
+      telefone: customerData.telefone,
+      cpf: cpfValor,
+    };
+
+    const dadosEntrega = {
+      endereco: customerData.endereco,
+      numero: customerData.numero,
+      complemento: customerData.complemento,
+      cidade: customerData.cidade,
+      estado: customerData.estado,
+      cep: customerData.cep,
+      metodoEntregaId: methodKey || null,
+      metodoEntrega: selectedOption?.nome || (methodKey || null),
+      freteMetodo: selectedOption?.nome || null,
+      fretePrazo: selectedOption?.prazo || null,
+    };
+
+    // Chama iniciarPagamentoMP passando ownerId e cliente com CPF
+    const pref = await iniciarPagamentoMP(
+      carrinhoAtual,
+      ownerId,
+      getFreteEfetivo(),
+      cliente,
+      dadosEntrega,
+    );
     const initPoint = pref?.init_point || pref?.initPoint || '';
     if (!initPoint) {
       if (helper) helper.textContent = 'Não foi possível iniciar o pagamento agora. Tente novamente.';

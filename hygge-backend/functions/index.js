@@ -278,36 +278,47 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
   }
 
   try {
-    // Adicionamos 'dadosEntrega' e 'cliente' para virem do frontend
-    const {itens, usuarioId, frete, dadosEntrega, cliente} = req.body; 
-    const preference = new Preference(mpClient);
+    const {itens, usuarioId, frete, cliente, dadosEntrega} = req.body;
 
-    // 1. GRAVAÇÃO DO RASCUNHO (O "Pulo do Gato" para produção)
-    // Usamos o usuarioId como ID do documento para facilitar a busca depois
-    const draftRef = db.collection("orders_draft").doc(usuarioId);
+    if (!usuarioId) {
+      res.status(400).json({error: "usuarioId é obrigatório"});
+      return;
+    }
+
+    // Regra de Ouro 1: docId = usuarioId do front
+    const docId = String(usuarioId);
+    const draftRef = admin.firestore().collection("orders_draft").doc(docId);
+
     await draftRef.set({
-      userId: usuarioId,
+      userId: docId,
+      cpf: cliente?.cpf || null,
+      cliente: {
+        ...cliente,
+        cpf: cliente?.cpf || null,
+      },
       email: cliente?.email || null,
       nome: cliente?.nome || "Cliente",
       telefone: cliente?.telefone || null,
-      produtos: itens.map(i => ({
-        id: String(i.id),
-        nome: String(i.nome),
-        preco: Number(i.preco),
-        quantidade: Number(i.quantidade)
-      })),
+      produtos: itens,
       subtotal: itens.reduce((acc, i) => acc + (Number(i.preco) * Number(i.quantidade)), 0),
       frete: Number(frete || 0),
-      endereco: dadosEntrega?.endereco || null,
-      numero: dadosEntrega?.numero || null,
-      cidade: dadosEntrega?.cidade || null,
-      estado: dadosEntrega?.estado || null,
-      cep: dadosEntrega?.cep || null,
+      total: itens.reduce((acc, i) => acc + (Number(i.preco) * Number(i.quantidade)), 0) + Number(frete || 0),
+      dadosEntrega: {
+        endereco: dadosEntrega?.endereco || null,
+        numero: dadosEntrega?.numero || null,
+        complemento: dadosEntrega?.complemento || "",
+        cidade: dadosEntrega?.cidade || null,
+        estado: dadosEntrega?.estado || null,
+        cep: dadosEntrega?.cep || null
+      },
       status_pagamento: "pending",
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 
-    // 2. Mapeia os itens para o Mercado Pago
+    // Regra de Ouro 2: external_reference = docId
+    const mpClient = new MercadoPagoConfig({ accessToken: mpKeyParam.value() });
+    const preference = new Preference(mpClient);
+
     const mpItems = itens.map((item) => ({
       id: String(item.id),
       title: String(item.nome),
@@ -334,17 +345,16 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
         pending: "https://hyggegames.com.br/pendente",
       },
       auto_return: "approved",
-      external_reference: usuarioId, // Este ID liga o pagamento ao rascunho
-      payment_methods: {
-        installments: 12,
-      },
+      external_reference: docId,
+      payment_methods: { installments: 12 },
     };
 
     const response = await preference.create({body});
     res.json({id: response.id, init_point: response.init_point});
+
   } catch (error) {
-    logger.error("Erro ao criar preferência e rascunho:", error);
-    res.status(500).json({error: "Erro ao gerar pagamento"});
+    logger.error("Erro ao criar preferência:", error);
+    res.status(500).json({error: "Erro interno ao gerar pagamento"});
   }
 });
 
@@ -418,11 +428,37 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
       if (paymentDetails.status === "approved") {
         const uid = paymentDetails.external_reference;
         const paymentId = String(paymentDetails.id);
+
+        // Busca explícita do rascunho pelo external_reference (ID do draft)
+        let draftData = null;
+        if (uid) {
+          try {
+            const draftSnap = await db.collection("orders_draft").doc(String(uid)).get();
+            draftData = draftSnap.exists ? (draftSnap.data() || {}) : null;
+            if (!draftData) {
+              logger.warn("orders_draft não encontrado para pagamento aprovado.", {uid, paymentId});
+            }
+          } catch (err) {
+            logger.warn("Falha ao buscar orders_draft por external_reference.", {
+              uid: String(uid),
+              paymentId,
+              detalhes: err?.message || String(err),
+            });
+          }
+        }
         
         // Tenta capturar o e-mail de várias fontes do Mercado Pago
-        let payerEmail = paymentDetails?.payer?.email || 
-                         paymentDetails?.additional_info?.payer?.email || 
-                         paymentDetails?.payer?.payer_email || null;
+        let payerEmail = paymentDetails?.payer?.email ||
+                         paymentDetails?.additional_info?.payer?.email ||
+                         paymentDetails?.payer?.payer_email ||
+                         null;
+
+        // Fallback de e-mail: força uso do e-mail do rascunho se o MP não enviar
+        if (!payerEmail && draftData) {
+          const fromDraft = draftData?.email || draftData?.cliente?.email || null;
+          const clean = String(fromDraft || "").trim();
+          if (clean) payerEmail = clean;
+        }
 
         const items = paymentDetails?.additional_info?.items || [];
         const total = paymentDetails?.transaction_amount ?? 0;
@@ -437,7 +473,7 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
           payerEmail,
         });
 
-        const emailFinal = payerEmail || finalized?.email || null;
+        const emailFinal = String(payerEmail || finalized?.email || "").trim() || null;
 
         // Só tenta enviar e-mail se existir um destinatário
         if (emailFinal) {
@@ -591,78 +627,155 @@ async function enviarParaBling(dadosPagamento) {
       "Content-Type": "application/json",
     };
 
-    const cpfLimpo = String(dadosPagamento.payer?.identification?.number || "").replace(/\D/g, "").trim();
-    const nomeCompleto = (dadosPagamento.payer?.first_name ? `${dadosPagamento.payer.first_name} ${dadosPagamento.payer.last_name}` : "Cliente Hygge").trim();
-    
+    // 1. Pega dados do rascunho (onde já temos nome/e-mail/endereço)
+    const uid = String(dadosPagamento?.external_reference || "").trim();
+    let draftData = {};
+    if (uid) {
+      try {
+        const draftDoc = await db.collection("orders_draft").doc(uid).get();
+        draftData = draftDoc.exists ? (draftDoc.data() || {}) : {};
+      } catch (e) {
+        logger.warn("Não foi possível ler orders_draft para o Bling.", {uid, detalhes: e?.message || String(e)});
+      }
+    }
+
+    // 2. Define variáveis de busca
+    const emailContato = String(
+      dadosPagamento?.payer?.email ||
+      draftData?.email ||
+      draftData?.cliente?.email ||
+      "",
+    ).trim();
+    // Busca o CPF do draft caso não venha do MP
+    const cpfOriginal = dadosPagamento?.payer?.identification?.number || draftData?.cpf || "";
+    const cpfLimpo = String(cpfOriginal).replace(/\D/g, "").trim();
+
+    const nomeCompleto = String(
+      draftData?.nome ||
+      draftData?.cliente?.nome ||
+      (dadosPagamento?.payer?.first_name ? `${dadosPagamento.payer.first_name} ${dadosPagamento.payer.last_name || ""}` : "") ||
+      "Cliente Hygge",
+    ).trim();
+
     let idDoContato = null;
 
-    if (cpfLimpo) {
+    // 2a. Tenta localizar primeiro por E-MAIL
+    if (emailContato) {
       try {
-        const buscaResp = await axios.get(`https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${cpfLimpo}`, { headers });
-        let lista = buscaResp.data?.data || [];
+        const buscaEmail = await axios.get(
+          `https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(emailContato)}`,
+          {headers},
+        );
+        if (buscaEmail.data?.data?.length > 0) {
+          idDoContato = buscaEmail.data.data[0].id;
+        }
+      } catch (e) {
+        logger.warn("Busca por e-mail falhou no Bling.", {detalhes: e?.response?.data || e?.message});
+      }
+    }
+
+    // 2b. Se não achou por e-mail e tem CPF, tenta por documento (incluindo inativos via criterio=1)
+    if (!idDoContato && cpfLimpo) {
+      try {
+        const buscaDoc = await axios.get(
+          `https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${encodeURIComponent(cpfLimpo)}`,
+          {headers},
+        );
+        let lista = Array.isArray(buscaDoc.data?.data) ? buscaDoc.data.data : [];
         if (lista.length === 0) {
-           const buscaGeral = await axios.get(`https://www.bling.com.br/Api/v3/contatos?criterio=1`, { headers });
-           lista = (buscaGeral.data?.data || []).filter(c => String(c.numeroDocumento || "").replace(/\D/g, "") === cpfLimpo);
+          const buscaGeral = await axios.get(
+            "https://www.bling.com.br/Api/v3/contatos?criterio=1",
+            {headers},
+          );
+          const geral = Array.isArray(buscaGeral.data?.data) ? buscaGeral.data.data : [];
+          lista = geral.filter((c) => String(c?.numeroDocumento || "").replace(/\D/g, "") === cpfLimpo);
         }
 
         if (lista.length > 0) {
           idDoContato = lista[0].id;
         }
       } catch (e) {
-        logger.warn("Erro ao localizar contato.");
+        logger.warn("Busca por CPF falhou no Bling.", {detalhes: e?.response?.data || e?.message});
       }
     }
 
+    // 3. Se ainda não tem ID, cria um novo contato
     if (!idDoContato) {
+      const payloadContato = {
+        nome: nomeCompleto,
+        tipo: "F",
+      };
+      if (emailContato) payloadContato.email = emailContato;
+      if (cpfLimpo) payloadContato.numeroDocumento = cpfLimpo;
+
       try {
-        const contatoResp = await axios.post("https://www.bling.com.br/Api/v3/contatos", {
-          nome: nomeCompleto,
-          tipo: "F",
-          numeroDocumento: cpfLimpo || null
-        }, { headers });
-        idDoContato = contatoResp.data.data.id;
-      } catch (errCreate) {
-        const msg = errCreate.response?.data?.error?.fields?.[0]?.msg || "";
-        if (msg.includes("já está cadastrado")) {
-           const buscaNome = await axios.get(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(cpfLimpo)}`, { headers });
-           idDoContato = buscaNome.data?.data?.[0]?.id;
+        const contatoResp = await axios.post(
+          "https://www.bling.com.br/Api/v3/contatos",
+          payloadContato,
+          {headers},
+        );
+        idDoContato = contatoResp.data?.data?.id || null;
+      } catch (errC) {
+        // Fallback final: se der duplicidade, tenta localizar novamente
+        const msg = errC.response?.data?.error?.fields?.[0]?.msg || "";
+        if (String(msg).includes("já está cadastrado")) {
+          try {
+            if (cpfLimpo) {
+              const buscaDoc = await axios.get(
+                `https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${encodeURIComponent(cpfLimpo)}`,
+                {headers},
+              );
+              idDoContato = buscaDoc.data?.data?.[0]?.id || null;
+            }
+            if (!idDoContato && emailContato) {
+              const buscaEmail = await axios.get(
+                `https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(emailContato)}`,
+                {headers},
+              );
+              idDoContato = buscaEmail.data?.data?.[0]?.id || null;
+            }
+          } catch {
+            // ignore
+          }
         }
-        if (!idDoContato) throw errCreate;
+        if (!idDoContato) throw errC;
       }
     }
 
     await sleep(800);
 
-    const produtosSnap = await admin.firestore().collection("products").get();
+    // 4. Mapear itens e endereço
+    const produtosSnap = await db.collection("products").get();
     const produtosMap = {};
-    produtosSnap.forEach(doc => { produtosMap[doc.id] = doc.data(); });
+    produtosSnap.forEach((doc) => { produtosMap[doc.id] = doc.data(); });
 
-    const itensMapeados = dadosPagamento.additional_info.items
-      .filter(item => item.id !== "FRETE")
+    const itensMapeados = (dadosPagamento.additional_info?.items || [])
+      .filter((item) => item?.id !== "FRETE")
       .map((item) => {
-        const produtoInfo = produtosMap[item.id];
-        const skuReal = produtoInfo?.SKU || item.id;
+        const produtoInfo = produtosMap[String(item?.id ?? "")];
+        const skuReal = produtoInfo?.SKU || produtoInfo?.sku || item?.id;
         return {
           produto: { codigo: String(skuReal) },
-          quantidade: Number(item.quantity),
-          valor: Number(item.unit_price),
+          quantidade: Number(item?.quantity ?? 1),
+          valor: Number(item?.unit_price ?? 0),
           unidade: "UN"
         };
       });
 
     const hoje = new Date().toISOString().split("T")[0];
-    const addr = dadosPagamento.additional_info?.shipment?.receiver_address;
+    const addrDraft = draftData?.dadosEntrega || {};
+    const addrPay = dadosPagamento.additional_info?.shipment?.receiver_address || {};
 
     const pedidoBling = {
       contato: { id: idDoContato },
       data: hoje,
       itens: itensMapeados,
       transporte: {
-        endereco: addr?.street_name || "",
-        numero: String(addr?.street_number || ""),
-        cep: addr?.zip_code || "",
-        cidade: addr?.city_name || "",
-        uf: addr?.state_name || ""
+        endereco: addrDraft?.endereco || addrPay?.street_name || "",
+        numero: String(addrDraft?.numero || addrPay?.street_number || ""),
+        cep: addrDraft?.cep || addrPay?.zip_code || "",
+        cidade: addrDraft?.cidade || addrPay?.city_name || "",
+        uf: addrDraft?.estado || addrPay?.state_name || ""
       },
       observacoes: `Site Hygge - MP ID: ${dadosPagamento.id}`
     };
