@@ -592,6 +592,102 @@ exports.callbackBling = onRequest({cors: true}, async (req, res) => {
 });
 
 /**
+ * 4x. TESTE DIRETO — Dispara envio ao Bling sem compra real
+ *
+ * - Busca um produto real em Firestore (collection: products)
+ * - Monta um payload similar ao Mercado Pago (additional_info.items)
+ * - Chama enviarParaBling(dadosSimulados)
+ */
+exports.testeDiretoBling = onRequest({cors: true}, async (req, res) => {
+  // CORS/preflight
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+
+  try {
+    const requestedProductId =
+      String(req.query?.productId || req.body?.productId || "").trim() || null;
+
+    let productId = requestedProductId;
+    let productData = null;
+
+    if (productId) {
+      const productSnap = await db.collection("products").doc(productId).get();
+      if (productSnap.exists) {
+        productData = productSnap.data() || null;
+      } else {
+        logger.warn("testeDiretoBling: productId não encontrado, usando fallback.", {productId});
+        productId = null;
+      }
+    }
+
+    if (!productId) {
+      const produtosSnap = await db.collection("products").limit(1).get();
+      if (produtosSnap.empty) {
+        res.status(400).json({sucesso: false, erro: "Nenhum produto encontrado em products."});
+        return;
+      }
+      const firstDoc = produtosSnap.docs[0];
+      productId = firstDoc.id;
+      productData = firstDoc.data() || null;
+    }
+
+    const nomeProduto = String(productData?.nome || productData?.title || "Produto de Teste Manual");
+    const precoProduto = Number(productData?.preco || productData?.price || 10);
+
+    const dadosSimulados = {
+      id: `TESTE-${Date.now()}`,
+      payer: {
+        first_name: "Teste",
+        last_name: "Hygge Manual",
+        identification: {number: "48062338894"},
+      },
+      additional_info: {
+        items: [
+          {
+            id: String(productId),
+            title: nomeProduto,
+            quantity: 1,
+            unit_price: Number.isFinite(precoProduto) ? precoProduto : 10,
+          },
+        ],
+        shipment: {
+          receiver_address: {
+            street_name: "Rua de Teste",
+            street_number: "123",
+            zip_code: "01001000",
+            city_name: "São Paulo",
+            state_name: "SP",
+          },
+        },
+      },
+    };
+
+    logger.info("testeDiretoBling: disparando enviarParaBling", {
+      simulatedId: dadosSimulados.id,
+      productId,
+      skuCandidate: productData?.SKU || productData?.sku || null,
+    });
+
+    await enviarParaBling(dadosSimulados);
+    res.json({
+      sucesso: true,
+      mensagem: "Tentativa de envio disparada. Verifique os logs e o Bling.",
+      produto: {id: productId, SKU: productData?.SKU || productData?.sku || null},
+      simulatedId: dadosSimulados.id,
+    });
+  } catch (error) {
+    logger.error("testeDiretoBling: erro ao disparar", error);
+    res.status(500).json({sucesso: false, erro: error?.message || String(error)});
+  }
+});
+
+/**
  * 4c. Bling Auxiliar — Enviar pedido (API v3)
  */
 async function enviarParaBling(dadosPagamento) {
@@ -602,67 +698,89 @@ async function enviarParaBling(dadosPagamento) {
       "Content-Type": "application/json",
     };
 
-    // Passo 1: Buscar ou criar contato no Bling
-    const cpfCnpj = dadosPagamento.payer?.identification?.number;
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // Passo 1: Criar contato no Bling (com fallback quando CPF já existe)
+    const cpfCnpj = String(dadosPagamento.payer?.identification?.number || "")
+      .replace(/\D/g, "")
+      .trim();
     const primeiroNome = dadosPagamento.payer?.first_name || "";
     const ultimoNome = dadosPagamento.payer?.last_name || "";
-    const nomeContato = primeiroNome
+    const nomeCompleto = primeiroNome
       ? `${primeiroNome} ${ultimoNome}`.trim()
       : "Cliente E-commerce Hygge";
 
-    let idDoContato = null;
+    const cpfLimpo = cpfCnpj.replace(/\D/g, "");
+    let idDoContato;
 
-    if (cpfCnpj) {
-      try {
-        const buscaResp = await axios.get(
-          `https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${cpfCnpj}`,
-          {headers},
-        );
-        if (buscaResp.data?.data?.length > 0) {
-          idDoContato = buscaResp.data.data[0].id;
-          logger.info(`Contato encontrado no Bling. ID: ${idDoContato}`);
-        }
-      } catch (err) {
-        logger.warn("Busca de contato no Bling falhou:", err.response?.data || err.message);
-      }
-    }
-
-    if (!idDoContato) {
-      const tipoPessoa = (cpfCnpj && cpfCnpj.length > 11) ? "J" : "F";
-      const payloadContato = {
-        nome: nomeContato,
-        tipo: tipoPessoa,
-        situacao: "A",
-      };
-
-      if (cpfCnpj) {
-        payloadContato.numeroDocumento = cpfCnpj;
-      }
-
-      const criarResp = await axios.post(
-        "https://www.bling.com.br/Api/v3/contatos",
-        payloadContato,
+    if (cpfLimpo) {
+      // Busca primeiro para economizar requisições
+      const buscaResp = await axios.get(
+        `https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${encodeURIComponent(cpfLimpo)}`,
         {headers},
       );
-      idDoContato = criarResp.data?.data?.id;
-      logger.info(`Contato criado no Bling. ID: ${idDoContato}`);
+      const contatoExistente = buscaResp.data?.data?.[0] || null;
+
+      if (contatoExistente) {
+        idDoContato = contatoExistente.id;
+        logger.info("Contato existente encontrado:", {idDoContato});
+      } else {
+        const novoContato = await axios.post(
+          "https://www.bling.com.br/Api/v3/contatos",
+          {
+            nome: nomeCompleto,
+            tipo: "F",
+            numeroDocumento: cpfLimpo,
+          },
+          {headers},
+        );
+        idDoContato = novoContato.data?.data?.id;
+        logger.info("Novo contato criado no Bling:", {idDoContato});
+      }
+    } else {
+      const novoContato = await axios.post(
+        "https://www.bling.com.br/Api/v3/contatos",
+        {
+          nome: nomeCompleto,
+          tipo: "F",
+        },
+        {headers},
+      );
+      idDoContato = novoContato.data?.data?.id;
+      logger.info("Novo contato criado no Bling (sem documento):", {idDoContato});
     }
 
     // Passo 2: Montar e enviar o pedido
     const hoje = new Date().toISOString().split("T")[0];
     const addr = dadosPagamento.additional_info?.shipment?.receiver_address;
 
+    // Passo 2a: Montar itens buscando o SKU real no Firestore
+    const produtosSnap = await admin.firestore().collection("products").get();
+    const produtosMap = {};
+    produtosSnap.forEach((doc) => {
+      produtosMap[doc.id] = doc.data();
+    });
+
+    const itensMapeados = dadosPagamento.additional_info.items.map((item) => {
+      const produtoInfo = produtosMap[item.id];
+      const skuReal = produtoInfo?.SKU || item.id;
+
+      return {
+        produto: {
+          id: null, // Deixe nulo para ele buscar pelo código
+          codigo: String(skuReal)
+        },
+        quantidade: Number(item.quantity),
+        valor: Number(item.unit_price),
+        unidade: "UN"
+      };
+    });
+
     const pedidoBling = {
       contato: {id: idDoContato},
       data: hoje,
       dataSaida: hoje,
-      itens: dadosPagamento.additional_info.items.map((item) => ({
-        codigo: String(item.id),
-        descricao: String(item.title),
-        quantidade: Number(item.quantity),
-        valor: Number(item.unit_price),
-        unidade: "UN",
-      })),
+      itens: itensMapeados,
       transporte: {
         endereco: addr?.street_name || "",
         numero: String(addr?.street_number || ""),
@@ -675,8 +793,26 @@ async function enviarParaBling(dadosPagamento) {
       observacoes: `Pedido originado no Site - MP ID: ${dadosPagamento.id}`,
     };
 
-    await axios.post("https://www.bling.com.br/Api/v3/pedidos/vendas", pedidoBling, {headers});
-    logger.info(`Pedido ${dadosPagamento.id} registrado no Bling v3 com sucesso.`);
+    // Pequena pausa para não estourar o limite de 3req/s do Bling
+    await sleep(500);
+
+    const pedidoResp = await axios.post(
+      "https://www.bling.com.br/Api/v3/pedidos/vendas",
+      pedidoBling,
+      {headers},
+    );
+
+    const blingPedidoId =
+      pedidoResp.data?.data?.id ??
+      pedidoResp.data?.data?.pedido?.id ??
+      pedidoResp.data?.id ??
+      null;
+
+    logger.info("Pedido registrado no Bling v3 com sucesso.", {
+      mercadopagoId: String(dadosPagamento.id || ""),
+      blingPedidoId,
+      contatoId: idDoContato,
+    });
   } catch (err) {
     logger.error("Falha na integração com o Bling v3:", err.response?.data || err.message);
   }
