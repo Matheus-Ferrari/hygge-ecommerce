@@ -54,9 +54,6 @@ function renderOrderItemsTable(items) {
     </table>`;
 }
 
-/**
- * Enfileira e-mail de confirmação de pedido na coleção "mail".
- */
 async function sendOrderConfirmationEmail({
   email,
   orderNumber,
@@ -272,6 +269,7 @@ const mpClient = new MercadoPagoConfig({
 
 /**
  * 1. FUNÇÃO: Criar Preferência (Checkout Mercado Pago)
+ * Agora ela grava o rascunho no Firestore para garantir que o Webhook funcione.
  */
 exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
   if (req.method !== "POST") {
@@ -280,11 +278,36 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
   }
 
   try {
-    // 1. Agora extraímos o frete do corpo da requisição
-    const {itens, usuarioId, frete} = req.body;
+    // Adicionamos 'dadosEntrega' e 'cliente' para virem do frontend
+    const {itens, usuarioId, frete, dadosEntrega, cliente} = req.body; 
     const preference = new Preference(mpClient);
 
-    // 2. Mapeia os itens do carrinho normalmente
+    // 1. GRAVAÇÃO DO RASCUNHO (O "Pulo do Gato" para produção)
+    // Usamos o usuarioId como ID do documento para facilitar a busca depois
+    const draftRef = db.collection("orders_draft").doc(usuarioId);
+    await draftRef.set({
+      userId: usuarioId,
+      email: cliente?.email || null,
+      nome: cliente?.nome || "Cliente",
+      telefone: cliente?.telefone || null,
+      produtos: itens.map(i => ({
+        id: String(i.id),
+        nome: String(i.nome),
+        preco: Number(i.preco),
+        quantidade: Number(i.quantidade)
+      })),
+      subtotal: itens.reduce((acc, i) => acc + (Number(i.preco) * Number(i.quantidade)), 0),
+      frete: Number(frete || 0),
+      endereco: dadosEntrega?.endereco || null,
+      numero: dadosEntrega?.numero || null,
+      cidade: dadosEntrega?.cidade || null,
+      estado: dadosEntrega?.estado || null,
+      cep: dadosEntrega?.cep || null,
+      status_pagamento: "pending",
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    // 2. Mapeia os itens para o Mercado Pago
     const mpItems = itens.map((item) => ({
       id: String(item.id),
       title: String(item.nome),
@@ -293,7 +316,6 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
       currency_id: "BRL",
     }));
 
-    // 3. Se houver valor de frete, adiciona como um item extra na conta
     if (Number(frete) > 0) {
       mpItems.push({
         id: "FRETE",
@@ -312,11 +334,8 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
         pending: "https://hyggegames.com.br/pendente",
       },
       auto_return: "approved",
-      external_reference: usuarioId,
-      // Permite pagamento como visitante (sem exigir conta MP)
+      external_reference: usuarioId, // Este ID liga o pagamento ao rascunho
       payment_methods: {
-        excluded_payment_types: [],
-        excluded_payment_methods: [],
         installments: 12,
       },
     };
@@ -324,7 +343,7 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
     const response = await preference.create({body});
     res.json({id: response.id, init_point: response.init_point});
   } catch (error) {
-    logger.error("Erro ao criar preferência no Mercado Pago:", error);
+    logger.error("Erro ao criar preferência e rascunho:", error);
     res.status(500).json({error: "Erro ao gerar pagamento"});
   }
 });
@@ -339,20 +358,19 @@ exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
   try {
     const {cepDestino, itens} = req.body;
     
-    // Monta os dados para o Melhor Envio com base nos itens do carrinho
     const payload = {
-      from: {postal_code: "06790030"}, // CEP de Origem da Hygge Games
+      from: {postal_code: "06790030"}, 
       to: {postal_code: cepDestino.replace(/\D/g, "")},
       products: itens.map((item) => ({
         id: item.id,
         width: 15,
         height: 6,
         length: 15,
-        weight: 0.35, // Peso estimado por jogo
+        weight: 0.35, 
         insurance_value: Number(item.preco),
         quantity: item.quantidade,
       })),
-      services: "1,2,17" // 1=PAC, 2=SEDEX, 17=Total Express Standard
+      services: "1,2,17" 
     };
 
     const response = await axios.post(
@@ -368,8 +386,6 @@ exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
       }
     );
 
-    // IDs Melhor Envio: 1=Correios PAC, 2=Correios SEDEX, 3=Jadlog .Package, 11=Total Express
-    // Filtra apenas os serviços disponíveis e com preço válido
     const opcoes = response.data
       .filter((s) => s.price != null && !s.error)
       .map((s) => ({
@@ -401,23 +417,17 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
 
       if (paymentDetails.status === "approved") {
         const uid = paymentDetails.external_reference;
-        logger.info(`Pagamento aprovado para o UID: ${uid}`);
-
         const paymentId = String(paymentDetails.id);
-        const payerEmail =
-          paymentDetails?.payer?.email ||
-          paymentDetails?.additional_info?.payer?.email ||
-          paymentDetails?.payer?.payer_email ||
-          null;
+        
+        // Tenta capturar o e-mail de várias fontes do Mercado Pago
+        let payerEmail = paymentDetails?.payer?.email || 
+                         paymentDetails?.additional_info?.payer?.email || 
+                         paymentDetails?.payer?.payer_email || null;
 
         const items = paymentDetails?.additional_info?.items || [];
-        const total =
-          paymentDetails?.transaction_amount ??
-          items.reduce(
-            (acc, item) => acc + Number(item?.unit_price || 0) * Number(item?.quantity || 0),
-            0,
-          );
+        const total = paymentDetails?.transaction_amount ?? 0;
 
+        // Finaliza no Firestore e tenta recuperar e-mail do draft se payerEmail for nulo
         const finalized = await finalizeOrderInFirestore({
           paymentId,
           userId: uid || "guest",
@@ -427,57 +437,37 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
           payerEmail,
         });
 
-        const emailTo = payerEmail || finalized?.email || null;
+        const emailFinal = payerEmail || finalized?.email || null;
 
-        const markerRef = db.collection("mp_payment_processed").doc(paymentId);
-        const shouldSendEmail = await db.runTransaction(async (tx) => {
-          const snap = await tx.get(markerRef);
-          const state = snap.exists ? snap.get("orderEmailState") : null;
-          if (state === "sent" || state === "processing") return false;
-
-          tx.set(
-            markerRef,
-            {
-              orderEmailState: "processing",
-              orderEmailPaymentId: paymentId,
-              orderEmailUid: uid || null,
-              orderEmailTo: emailTo,
-              orderEmailStartedAt: admin.firestore.FieldValue.serverTimestamp(),
-            },
-            {merge: true},
-          );
-          return true;
-        });
-
-        if (shouldSendEmail) {
+        // Só tenta enviar e-mail se existir um destinatário
+        if (emailFinal) {
           try {
-            await sendOrderConfirmationEmail({
-              email: emailTo,
-              orderNumber: paymentId,
-              items,
-              total,
-              trackingUrl: "https://hyggegames.com.br/perfil",
+            const markerRef = db.collection("mp_payment_processed").doc(paymentId);
+            const shouldSendEmail = await db.runTransaction(async (tx) => {
+              const snap = await tx.get(markerRef);
+              if (snap.exists && (snap.get("orderEmailState") === "sent" || snap.get("orderEmailState") === "processing")) return false;
+              tx.set(markerRef, { orderEmailState: "processing", orderEmailTo: emailFinal }, {merge: true});
+              return true;
             });
 
-            await markerRef.set(
-              {
-                orderEmailState: "sent",
-                orderEmailSentAt: admin.firestore.FieldValue.serverTimestamp(),
-              },
-              {merge: true},
-            );
-          } catch (err) {
-            await markerRef.set(
-              {
-                orderEmailState: "error",
-                orderEmailErrorAt: admin.firestore.FieldValue.serverTimestamp(),
-                orderEmailErrorMessage: err?.message || String(err),
-              },
-              {merge: true},
-            );
-            throw err;
+            if (shouldSendEmail) {
+              await sendOrderConfirmationEmail({
+                email: emailFinal,
+                orderNumber: paymentId,
+                items,
+                total,
+                trackingUrl: "https://hyggegames.com.br/perfil",
+              });
+              await markerRef.set({ orderEmailState: "sent" }, {merge: true});
+            }
+          } catch (e) {
+            logger.error("Erro ao processar fila de e-mail:", e.message);
           }
+        } else {
+          logger.warn(`Pagamento ${paymentId} aprovado, mas nenhum e-mail encontrado para envio.`);
         }
+
+        // SEMPRE tenta enviar para o Bling, mesmo se o e-mail falhar
         await enviarParaBling(paymentDetails);
       }
     }
@@ -496,21 +486,19 @@ async function obterTokenBling() {
   const snap = await tokenDoc.get();
 
   if (!snap.exists) {
-    throw new Error("Tokens do Bling não encontrados. Autorize primeiro via /callbackBling.");
+    throw new Error("Tokens do Bling não encontrados.");
   }
 
   const dados = snap.data();
   const agora = Date.now();
-  // Renova se faltar menos de 60 s para expirar
   const expiraEm = dados.expires_at?.toMillis?.() ?? dados.expires_at ?? 0;
 
   if (dados.access_token && agora < expiraEm - 60000) {
     return dados.access_token;
   }
 
-  // Token expirado — usa refresh_token para obter um novo
   if (!dados.refresh_token) {
-    throw new Error("Refresh token do Bling ausente. Reautorize via /callbackBling.");
+    throw new Error("Refresh token do Bling ausente.");
   }
 
   const credentials = Buffer.from(
@@ -543,7 +531,6 @@ async function obterTokenBling() {
     updated_at: admin.firestore.FieldValue.serverTimestamp(),
   });
 
-  logger.info("Token do Bling renovado com sucesso.");
   return novosDados.access_token;
 }
 
@@ -585,112 +572,18 @@ exports.callbackBling = onRequest({cors: true}, async (req, res) => {
       updated_at: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    res.status(200).send("<h1>Bling autorizado com sucesso!</h1><p>Agora o sistema pode enviar pedidos.</p>");
+    res.status(200).send("<h1>Bling autorizado com sucesso!</h1>");
   } catch (error) {
-    res.status(500).json({erro: error.message, detalhes: error.response?.data});
+    res.status(500).json({erro: error.message});
   }
 });
 
 /**
- * 4x. TESTE DIRETO — Dispara envio ao Bling sem compra real
- *
- * - Busca um produto real em Firestore (collection: products)
- * - Monta um payload similar ao Mercado Pago (additional_info.items)
- * - Chama enviarParaBling(dadosSimulados)
- */
-exports.testeDiretoBling = onRequest({cors: true}, async (req, res) => {
-  // CORS/preflight
-  res.set("Access-Control-Allow-Origin", "*");
-  res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.set("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") {
-    res.status(204).send("");
-    return;
-  }
-
-  try {
-    const requestedProductId =
-      String(req.query?.productId || req.body?.productId || "").trim() || null;
-
-    let productId = requestedProductId;
-    let productData = null;
-
-    if (productId) {
-      const productSnap = await db.collection("products").doc(productId).get();
-      if (productSnap.exists) {
-        productData = productSnap.data() || null;
-      } else {
-        logger.warn("testeDiretoBling: productId não encontrado, usando fallback.", {productId});
-        productId = null;
-      }
-    }
-
-    if (!productId) {
-      const produtosSnap = await db.collection("products").limit(1).get();
-      if (produtosSnap.empty) {
-        res.status(400).json({sucesso: false, erro: "Nenhum produto encontrado em products."});
-        return;
-      }
-      const firstDoc = produtosSnap.docs[0];
-      productId = firstDoc.id;
-      productData = firstDoc.data() || null;
-    }
-
-    const nomeProduto = String(productData?.nome || productData?.title || "Produto de Teste Manual");
-    const precoProduto = Number(productData?.preco || productData?.price || 10);
-
-    const dadosSimulados = {
-      id: `TESTE-${Date.now()}`,
-      payer: {
-        first_name: "Teste",
-        last_name: "Hygge Manual",
-        identification: {number: "48062338894"},
-      },
-      additional_info: {
-        items: [
-          {
-            id: String(productId),
-            title: nomeProduto,
-            quantity: 1,
-            unit_price: Number.isFinite(precoProduto) ? precoProduto : 10,
-          },
-        ],
-        shipment: {
-          receiver_address: {
-            street_name: "Rua de Teste",
-            street_number: "123",
-            zip_code: "01001000",
-            city_name: "São Paulo",
-            state_name: "SP",
-          },
-        },
-      },
-    };
-
-    logger.info("testeDiretoBling: disparando enviarParaBling", {
-      simulatedId: dadosSimulados.id,
-      productId,
-      skuCandidate: productData?.SKU || productData?.sku || null,
-    });
-
-    await enviarParaBling(dadosSimulados);
-    res.json({
-      sucesso: true,
-      mensagem: "Tentativa de envio disparada. Verifique os logs e o Bling.",
-      produto: {id: productId, SKU: productData?.SKU || productData?.sku || null},
-      simulatedId: dadosSimulados.id,
-    });
-  } catch (error) {
-    logger.error("testeDiretoBling: erro ao disparar", error);
-    res.status(500).json({sucesso: false, erro: error?.message || String(error)});
-  }
-});
-
-/**
- * 4c. Bling Auxiliar — Enviar pedido (API v3)
+ * Envia o pedido para o Bling V3 com resiliência
  */
 async function enviarParaBling(dadosPagamento) {
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)); 
+  
   try {
     const token = await obterTokenBling();
     const headers = {
@@ -698,138 +591,98 @@ async function enviarParaBling(dadosPagamento) {
       "Content-Type": "application/json",
     };
 
-    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-    // Passo 1: Criar contato no Bling (com fallback quando CPF já existe)
-    const cpfCnpj = String(dadosPagamento.payer?.identification?.number || "")
-      .replace(/\D/g, "")
-      .trim();
-    const primeiroNome = dadosPagamento.payer?.first_name || "";
-    const ultimoNome = dadosPagamento.payer?.last_name || "";
-    const nomeCompleto = primeiroNome
-      ? `${primeiroNome} ${ultimoNome}`.trim()
-      : "Cliente E-commerce Hygge";
-
-    const cpfLimpo = cpfCnpj.replace(/\D/g, "");
-    let idDoContato;
+    const cpfLimpo = String(dadosPagamento.payer?.identification?.number || "").replace(/\D/g, "").trim();
+    const nomeCompleto = (dadosPagamento.payer?.first_name ? `${dadosPagamento.payer.first_name} ${dadosPagamento.payer.last_name}` : "Cliente Hygge").trim();
+    
+    let idDoContato = null;
 
     if (cpfLimpo) {
-      // Busca primeiro para economizar requisições
-      const buscaResp = await axios.get(
-        `https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${encodeURIComponent(cpfLimpo)}`,
-        {headers},
-      );
-      const contatoExistente = buscaResp.data?.data?.[0] || null;
+      try {
+        const buscaResp = await axios.get(`https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${cpfLimpo}`, { headers });
+        let lista = buscaResp.data?.data || [];
+        if (lista.length === 0) {
+           const buscaGeral = await axios.get(`https://www.bling.com.br/Api/v3/contatos?criterio=1`, { headers });
+           lista = (buscaGeral.data?.data || []).filter(c => String(c.numeroDocumento || "").replace(/\D/g, "") === cpfLimpo);
+        }
 
-      if (contatoExistente) {
-        idDoContato = contatoExistente.id;
-        logger.info("Contato existente encontrado:", {idDoContato});
-      } else {
-        const novoContato = await axios.post(
-          "https://www.bling.com.br/Api/v3/contatos",
-          {
-            nome: nomeCompleto,
-            tipo: "F",
-            numeroDocumento: cpfLimpo,
-          },
-          {headers},
-        );
-        idDoContato = novoContato.data?.data?.id;
-        logger.info("Novo contato criado no Bling:", {idDoContato});
+        if (lista.length > 0) {
+          idDoContato = lista[0].id;
+        }
+      } catch (e) {
+        logger.warn("Erro ao localizar contato.");
       }
-    } else {
-      const novoContato = await axios.post(
-        "https://www.bling.com.br/Api/v3/contatos",
-        {
-          nome: nomeCompleto,
-          tipo: "F",
-        },
-        {headers},
-      );
-      idDoContato = novoContato.data?.data?.id;
-      logger.info("Novo contato criado no Bling (sem documento):", {idDoContato});
     }
 
-    // Passo 2: Montar e enviar o pedido
+    if (!idDoContato) {
+      try {
+        const contatoResp = await axios.post("https://www.bling.com.br/Api/v3/contatos", {
+          nome: nomeCompleto,
+          tipo: "F",
+          numeroDocumento: cpfLimpo || null
+        }, { headers });
+        idDoContato = contatoResp.data.data.id;
+      } catch (errCreate) {
+        const msg = errCreate.response?.data?.error?.fields?.[0]?.msg || "";
+        if (msg.includes("já está cadastrado")) {
+           const buscaNome = await axios.get(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(cpfLimpo)}`, { headers });
+           idDoContato = buscaNome.data?.data?.[0]?.id;
+        }
+        if (!idDoContato) throw errCreate;
+      }
+    }
+
+    await sleep(800);
+
+    const produtosSnap = await admin.firestore().collection("products").get();
+    const produtosMap = {};
+    produtosSnap.forEach(doc => { produtosMap[doc.id] = doc.data(); });
+
+    const itensMapeados = dadosPagamento.additional_info.items
+      .filter(item => item.id !== "FRETE")
+      .map((item) => {
+        const produtoInfo = produtosMap[item.id];
+        const skuReal = produtoInfo?.SKU || item.id;
+        return {
+          produto: { codigo: String(skuReal) },
+          quantidade: Number(item.quantity),
+          valor: Number(item.unit_price),
+          unidade: "UN"
+        };
+      });
+
     const hoje = new Date().toISOString().split("T")[0];
     const addr = dadosPagamento.additional_info?.shipment?.receiver_address;
 
-    // Passo 2a: Montar itens buscando o SKU real no Firestore
-    const produtosSnap = await admin.firestore().collection("products").get();
-    const produtosMap = {};
-    produtosSnap.forEach((doc) => {
-      produtosMap[doc.id] = doc.data();
-    });
-
-    const itensMapeados = dadosPagamento.additional_info.items.map((item) => {
-      const produtoInfo = produtosMap[item.id];
-      const skuReal = produtoInfo?.SKU || item.id;
-
-      return {
-        produto: {
-          id: null, // Deixe nulo para ele buscar pelo código
-          codigo: String(skuReal)
-        },
-        quantidade: Number(item.quantity),
-        valor: Number(item.unit_price),
-        unidade: "UN"
-      };
-    });
-
     const pedidoBling = {
-      contato: {id: idDoContato},
+      contato: { id: idDoContato },
       data: hoje,
-      dataSaida: hoje,
       itens: itensMapeados,
       transporte: {
         endereco: addr?.street_name || "",
         numero: String(addr?.street_number || ""),
-        complemento: addr?.apartment || "",
-        bairro: "",
         cep: addr?.zip_code || "",
         cidade: addr?.city_name || "",
-        uf: addr?.state_name || "",
+        uf: addr?.state_name || ""
       },
-      observacoes: `Pedido originado no Site - MP ID: ${dadosPagamento.id}`,
+      observacoes: `Site Hygge - MP ID: ${dadosPagamento.id}`
     };
 
-    // Pequena pausa para não estourar o limite de 3req/s do Bling
-    await sleep(500);
+    await axios.post("https://www.bling.com.br/Api/v3/pedidos/vendas", pedidoBling, { headers });
+    logger.info("Venda registrada no Bling.");
 
-    const pedidoResp = await axios.post(
-      "https://www.bling.com.br/Api/v3/pedidos/vendas",
-      pedidoBling,
-      {headers},
-    );
-
-    const blingPedidoId =
-      pedidoResp.data?.data?.id ??
-      pedidoResp.data?.data?.pedido?.id ??
-      pedidoResp.data?.id ??
-      null;
-
-    logger.info("Pedido registrado no Bling v3 com sucesso.", {
-      mercadopagoId: String(dadosPagamento.id || ""),
-      blingPedidoId,
-      contatoId: idDoContato,
-    });
   } catch (err) {
-    logger.error("Falha na integração com o Bling v3:", err.response?.data || err.message);
+    logger.error("Falha Bling:", err.response?.data || err.message);
   }
 }
 
 /**
  * 5. FUNÇÃO: Solicitar redefinição de senha
- * Gera um link de redefinição via Firebase Auth Admin SDK
- * e cria um documento na coleção "mail" com o template de e-mail.
  */
 exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => {
-  // Cabeçalhos básicos de CORS para permitir chamadas do localhost e Hosting
   res.set("Access-Control-Allow-Origin", "*");
   res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.set("Access-Control-Allow-Headers", "Content-Type");
 
-  // Responde rapidamente às requisições de preflight
   if (req.method === "OPTIONS") {
     res.status(204).send("");
     return;
@@ -842,7 +695,7 @@ exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => 
 
   try {
     const {email} = req.body || {};
-    if (!email || typeof email !== "string") {
+    if (!email) {
       res.status(400).json({error: "E-mail é obrigatório"});
       return;
     }
@@ -855,8 +708,6 @@ exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => 
       };
       link = await admin.auth().generatePasswordResetLink(email, actionCodeSettings);
     } catch (err) {
-      // Não revela se o usuário existe ou não.
-      logger.error("Erro ao gerar link de redefinição de senha:", err);
       res.status(200).json({ok: true});
       return;
     }
@@ -868,32 +719,31 @@ exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => 
       if (oobCode) {
         resetLink = `${resetLink}?oobCode=${encodeURIComponent(oobCode)}`;
       }
-    } catch (err) {
-      logger.error("Não foi possível extrair o oobCode do link de redefinição:", err);
-    }
+    } catch (err) { }
 
     const html = generateEmailTemplate({
       title: "Recuperação de senha",
-      message: "Recebemos uma solicitação para redefinir sua senha. Clique no botão abaixo para continuar.",
+      message: "Clique abaixo para redefinir sua senha.",
       buttonText: "Redefinir senha",
       buttonLink: resetLink,
-      footerText: "Hygge Games • Se você não solicitou, ignore este e-mail.",
+      footerText: "Hygge Games",
     });
 
     await db.collection("mail").add({
       to: email,
       message: {
-        subject: "Redefinir senha da sua conta Hygge Games",
+        subject: "Redefinir senha - Hygge Games",
         html,
       },
     });
 
     res.status(200).json({ok: true});
   } catch (error) {
-    logger.error("Erro ao enfileirar e-mail de redefinição de senha:", error);
-    res.status(500).json({error: "Erro ao solicitar redefinição de senha"});
+    res.status(500).json({error: "Erro"});
   }
 });
+
+
 
 // firebase deploy --only functions
 

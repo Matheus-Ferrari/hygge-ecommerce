@@ -12,7 +12,11 @@ const API_BASE_URL = "https://us-central1-e-commerce-hygge.cloudfunctions.net";
  * @param {string} usuarioId - O UID do usuário vindo do Firebase Auth
  * @param {number} frete - O valor do frete calculado
  */
-export const iniciarPagamentoMP = async (itens, usuarioId, frete = 0) => {
+/**
+ * Envia os itens do carrinho e o frete para gerar o link de pagamento no Mercado Pago.
+ * Agora também envia dados do cliente e entrega para salvar o rascunho no Firestore.
+ */
+export const iniciarPagamentoMP = async (itens, usuarioId, frete = 0, cliente = {}, dadosEntrega = {}) => {
   const response = await fetch(`${API_BASE_URL}/criarPreferencia`, {
     method: "POST",
     headers: {
@@ -21,7 +25,9 @@ export const iniciarPagamentoMP = async (itens, usuarioId, frete = 0) => {
     body: JSON.stringify({
       itens: itens,
       usuarioId: usuarioId,
-      frete: frete, // Enviando o frete para o backend
+      frete: frete,
+      cliente: cliente,           // NOVO: Necessário para o rascunho e e-mail
+      dadosEntrega: dadosEntrega   // NOVO: Necessário para o endereço no Bling
     }),
   });
 
