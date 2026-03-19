@@ -611,10 +611,9 @@ exports.callbackBling = onRequest({cors: true}, async (req, res) => {
 });
 
 /**
- * Envia o pedido para o Bling V3 com resiliência e controle de taxa (Rate Limit)
+ * Envia o pedido para o Bling V3 com resiliência
  */
 async function enviarParaBling(dadosPagamento) {
-  // Função para criar as pausas entre as requisições (evita o erro TOO_MANY_REQUESTS)
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)); 
   
   try {
@@ -624,19 +623,19 @@ async function enviarParaBling(dadosPagamento) {
       "Content-Type": "application/json",
     };
 
-    // 1. Pega dados do rascunho (onde já temos nome/e-mail/endereço)
+    // 1. Pega dados do rascunho
     const uid = String(dadosPagamento?.external_reference || "").trim();
     let draftData = {};
     if (uid) {
       try {
-        const draftDoc = await admin.firestore().collection("orders_draft").doc(uid).get();
+        const draftDoc = await db.collection("orders_draft").doc(uid).get();
         draftData = draftDoc.exists ? (draftDoc.data() || {}) : {};
       } catch (e) {
         logger.warn("Não foi possível ler orders_draft para o Bling.", {uid, detalhes: e?.message || String(e)});
       }
     }
 
-    // 2. Define variáveis de busca (Prioridade MÁXIMA para o Rascunho)
+    // 2. Define variáveis de busca
     const emailContato = String(draftData?.email || draftData?.cliente?.email || dadosPagamento?.payer?.email || "").trim();
     const cpfOriginal = draftData?.cpf || dadosPagamento?.payer?.identification?.number || "";
     const cpfLimpo = String(cpfOriginal).replace(/\D/g, "").trim();
@@ -659,17 +658,17 @@ async function enviarParaBling(dadosPagamento) {
       } catch (e) {
         logger.warn("Busca por e-mail falhou no Bling.", {detalhes: e?.response?.data || e?.message});
       }
-      await sleep(400); // PAUSA 1: Garante respiro na API
+      await sleep(400);
     }
 
-    // 2b. Se não achou por e-mail e tem CPF, tenta por documento
+    // 2b. Se não achou por e-mail e tem CPF
     if (!idDoContato && cpfLimpo) {
       try {
         const buscaDoc = await axios.get(
           `https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${encodeURIComponent(cpfLimpo)}`,
           {headers},
         );
-        await sleep(400); // PAUSA 2: Respiro antes da próxima busca
+        await sleep(400);
 
         let lista = Array.isArray(buscaDoc.data?.data) ? buscaDoc.data.data : [];
         if (lista.length === 0) {
@@ -677,8 +676,7 @@ async function enviarParaBling(dadosPagamento) {
             "https://www.bling.com.br/Api/v3/contatos?criterio=1",
             {headers},
           );
-          await sleep(400); // PAUSA 3: Respiro após busca por inativos
-
+          await sleep(400);
           const geral = Array.isArray(buscaGeral.data?.data) ? buscaGeral.data.data : [];
           lista = geral.filter((c) => String(c?.numeroDocumento || "").replace(/\D/g, "") === cpfLimpo);
         }
@@ -691,7 +689,7 @@ async function enviarParaBling(dadosPagamento) {
       }
     }
 
-    // 3. Se ainda não tem ID, cria um novo contato COM ENDEREÇO COMPLETO
+    // 3. Se ainda não tem ID, cria um novo contato COM ENDEREÇO
     if (!idDoContato) {
       const payloadContato = {
         nome: nomeCompleto,
@@ -701,7 +699,7 @@ async function enviarParaBling(dadosPagamento) {
           geral: {
             endereco: addrDraft?.endereco || "Endereço não informado",
             numero: String(addrDraft?.numero || "S/N"),
-            bairro: addrDraft?.complemento || "Centro", // O Bling EXIGE bairro, usamos complemento ou fallback
+            bairro: addrDraft?.complemento || "Centro", 
             municipio: addrDraft?.cidade || "Cidade",
             uf: addrDraft?.estado || "SP",
             cep: addrDraft?.cep || "00000000"
@@ -717,14 +715,13 @@ async function enviarParaBling(dadosPagamento) {
       } catch (errC) {
         throw errC;
       }
-      await sleep(400); // PAUSA 4: Respiro após criar contato
+      await sleep(400);
     }
 
-    await sleep(800); // PAUSA FINAL OBRIGATÓRIA antes de criar a venda
+    await sleep(800);
 
-    // 4. Mapear itens e endereço para a Venda
-    const produtosSnap = await admin.firestore().collection("products").get();
-        
+    // 4. Mapear itens e endereço
+    const produtosSnap = await db.collection("products").get();
     const produtosMap = {};
     const produtosPorNome = {};
     produtosSnap.forEach((doc) => { 
@@ -748,12 +745,11 @@ async function enviarParaBling(dadosPagamento) {
       let idInternoBling = null;
 
       try {
-        // Busca o ID interno do produto no Bling pelo SKU para forçar o vínculo perfeito
         const buscaProd = await axios.get(`https://www.bling.com.br/Api/v3/produtos?codigo=${encodeURIComponent(skuReal)}`, {headers});
         if (buscaProd.data?.data?.length > 0) {
           idInternoBling = buscaProd.data.data[0].id;
         }
-        await sleep(350); // Freio do Rate Limit
+        await sleep(350); 
       } catch (errProd) {
         logger.warn("Aviso: Produto não encontrado na busca prévia do Bling", {skuReal});
       }
@@ -766,7 +762,6 @@ async function enviarParaBling(dadosPagamento) {
         unidade: "UN"
       };
 
-      // Se acharmos o ID interno, dizemos ao Bling para NÃO tentar cadastrar nada!
       if (idInternoBling) {
         objItem.produto = { id: idInternoBling };
       }
@@ -782,6 +777,18 @@ async function enviarParaBling(dadosPagamento) {
       data: hoje,
       itens: itensMapeados,
       transporte: {
+        fretePorConta: 0, 
+        frete: Number(draftData?.frete ?? 0),
+        quantidadeVolumes: 1, // <-- Adicionado para garantir que o Bling processe o volume
+        contato: {
+          nome: String(draftData?.metodoEntrega || draftData?.freteMetodo || "Transportadora")
+        },
+        // AQUI ESTÁ A CORREÇÃO: Buscando do lugar exato do seu banco de dados
+        volumes: [
+          {
+            servico: String(draftData?.dadosEntrega?.metodoEntregaId || draftData?.freteOpcaoId || "")
+          }
+        ],
         endereco: addrDraft?.endereco || addrPay?.street_name || "",
         numero: String(addrDraft?.numero || addrPay?.street_number || ""),
         cep: addrDraft?.cep || addrPay?.zip_code || "",
@@ -794,6 +801,7 @@ async function enviarParaBling(dadosPagamento) {
     await axios.post("https://www.bling.com.br/Api/v3/pedidos/vendas", pedidoBling, { headers });
     logger.info("Venda registrada no Bling.");
 
+  // O ERRO ESTAVA AQUI: As chaves abaixo tinham sido apagadas!
   } catch (err) {
     logger.error("Falha Bling:", err.response?.data || err.message);
   }
