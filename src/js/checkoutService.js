@@ -40,7 +40,23 @@ export const iniciarPagamentoMP = async (itens, usuarioId, frete = 0, cliente = 
 };
 
 /**
- * Solicita o cálculo de frete baseado no CEP e itens selecionados.
+ * Consulta o status real de um pedido/pagamento no backend.
+ * Usado pela página de pagamento pendente para polling do Pix.
+ * @param {object} params - { externalReference, paymentId }
+ * @returns {Promise<object>} - { found, approved, status, orderId, paymentId, ... }
+ */
+export const consultarStatusPedido = async ({ externalReference = '', paymentId = '' } = {}) => {
+  const qp = new URLSearchParams();
+  if (externalReference) qp.set('external_reference', externalReference);
+  if (paymentId)         qp.set('payment_id', paymentId);
+
+  const response = await fetch(`${API_BASE_URL}/consultarStatusPedido?${qp.toString()}`);
+  if (!response.ok) {
+    throw new Error(`Erro ao consultar status: HTTP ${response.status}`);
+  }
+  return response.json();
+};
+/**
  * @param {string} cepDestino - CEP do cliente
  * @param {Array} itens - Array de produtos para cálculo de volume
  * @returns {Promise<Array|Object>} - Retorna uma lista de opções [{id, nome, valor, prazo}]

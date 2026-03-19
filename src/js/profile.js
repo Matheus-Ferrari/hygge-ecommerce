@@ -7,7 +7,6 @@ import {
   getDoc,
   getDocs,
   limit,
-  orderBy,
   query,
   setDoc,
   serverTimestamp,
@@ -231,6 +230,16 @@ function formatDate(ts) {
   }
 }
 
+const STATUS_CONFIG = {
+  approved:     { label: 'Aprovado',          color: '#2e7d32', bg: '#e8f5e9' },
+  pending:      { label: 'Pendente',           color: '#e65100', bg: '#fff3e0' },
+  in_process:   { label: 'Em processamento',   color: '#1565c0', bg: '#e3f2fd' },
+  in_mediation: { label: 'Em mediação',        color: '#6a1b9a', bg: '#f3e5f5' },
+  rejected:     { label: 'Recusado',           color: '#c62828', bg: '#ffebee' },
+  cancelled:    { label: 'Cancelado',          color: '#616161', bg: '#f5f5f5' },
+  refunded:     { label: 'Reembolsado',        color: '#00695c', bg: '#e0f2f1' },
+};
+
 function renderOrders(orders) {
   const list = document.getElementById('orders-list');
   const empty = document.getElementById('orders-empty');
@@ -246,62 +255,163 @@ function renderOrders(orders) {
   if (empty) empty.hidden = true;
 
   orders.forEach((order) => {
+    const statusKey = String(order.status_pagamento || 'pending').toLowerCase();
+    const statusCfg = STATUS_CONFIG[statusKey] || { label: statusKey, color: '#555', bg: '#f0f0f0' };
+
+    const total = order.valor_total ?? order.total ?? 0;
+    const date  = order.data_pedido ?? order.approvedAt ?? order.updatedAt ?? order.createdAt ?? null;
+    const itensFromOrders = Array.isArray(order.itens)    ? order.itens    : [];
+    const itensFromDraft  = Array.isArray(order.produtos) ? order.produtos : [];
+    const itens = itensFromOrders.length ? itensFromOrders : itensFromDraft;
+
     const wrap = document.createElement('div');
     wrap.className = 'profile-order';
+    wrap.style.padding = '16px';
 
+    // Linha do topo: identificação + data (esquerda) e badge + total (direita)
     const top = document.createElement('div');
     top.className = 'profile-order__top';
+    top.style.marginBottom = '12px';
+
+    const idBlock = document.createElement('div');
+    idBlock.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
 
     const idEl = document.createElement('div');
     idEl.className = 'profile-order__id';
-    idEl.textContent = `Pedido ${order.id}`;
+    if (order.mercadopago_id) {
+      idEl.textContent = `Pedido #${order.mercadopago_id}`;
+    } else if (order._source === 'orders_draft') {
+      idEl.textContent = 'Pedido em andamento';
+    } else {
+      idEl.textContent = `Pedido ${order.id}`;
+    }
 
-    const meta = document.createElement('div');
-    meta.className = 'profile-order__meta';
-    meta.textContent = `${formatDate(order.data_pedido)} • ${order.status_pagamento || 'status'} • ${formatBRL(order.valor_total)}`;
+    const dateEl = document.createElement('div');
+    dateEl.style.cssText = 'font-size:0.88rem;color:#888;font-family:var(--font-sans);';
+    dateEl.textContent = formatDate(date);
 
-    top.appendChild(idEl);
-    top.appendChild(meta);
+    idBlock.appendChild(idEl);
+    idBlock.appendChild(dateEl);
 
-    const ul = document.createElement('ul');
-    ul.className = 'profile-order__items';
-    const itens = Array.isArray(order.itens) ? order.itens : [];
-    itens.forEach((item) => {
-      const li = document.createElement('li');
-      const qtd = item?.quantidade ? `x${item.quantidade}` : '';
-      const nome = item?.nome || 'Item';
-      li.textContent = `${nome} ${qtd}`.trim();
-      ul.appendChild(li);
-    });
+    const rightBlock = document.createElement('div');
+    rightBlock.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:6px;';
 
+    const badge = document.createElement('span');
+    badge.textContent = statusCfg.label;
+    badge.style.cssText = `display:inline-block;padding:3px 12px;border-radius:999px;font-size:0.82rem;font-weight:700;font-family:var(--font-sans);color:${statusCfg.color};background:${statusCfg.bg};`;
+
+    const totalEl = document.createElement('strong');
+    totalEl.style.cssText = 'font-family:var(--font-sans);font-size:1.05rem;';
+    totalEl.textContent = formatBRL(total);
+
+    rightBlock.appendChild(badge);
+    rightBlock.appendChild(totalEl);
+    top.appendChild(idBlock);
+    top.appendChild(rightBlock);
     wrap.appendChild(top);
-    if (ul.childElementCount) wrap.appendChild(ul);
+
+    // Grade de itens
+    if (itens.length) {
+      const itemsGrid = document.createElement('div');
+      itemsGrid.style.cssText = 'display:flex;flex-direction:column;gap:10px;margin-top:8px;padding-top:12px;border-top:1px solid rgba(0,0,0,0.07);';
+
+      itens.forEach((item) => {
+        const nome  = String(item?.nome || item?.id_produto || 'Produto');
+        const qtd   = Number(item?.quantidade ?? 1);
+        const preco = Number(item?.preco_unitario ?? item?.preco ?? 0);
+        const img   = item?.imagem || null;
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:12px;';
+
+        if (img) {
+          const thumb = document.createElement('img');
+          thumb.src = img;
+          thumb.alt = nome;
+          thumb.style.cssText = 'width:50px;height:50px;object-fit:cover;border-radius:10px;flex-shrink:0;background:#ece7e0;';
+          thumb.onerror = () => { thumb.onerror = null; thumb.src = '/img/logopreta.png'; };
+          row.appendChild(thumb);
+        }
+
+        const info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;';
+
+        const nameEl = document.createElement('p');
+        nameEl.style.cssText = 'margin:0 0 2px 0;font-weight:600;font-size:0.95rem;font-family:var(--font-sans);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        nameEl.textContent = nome;
+
+        const detailEl = document.createElement('p');
+        detailEl.style.cssText = 'margin:0;color:#666;font-size:0.87rem;font-family:var(--font-sans);';
+        detailEl.textContent = `Qtd: ${qtd}${preco > 0 ? ' · ' + formatBRL(preco) : ''}`;
+
+        info.appendChild(nameEl);
+        info.appendChild(detailEl);
+        row.appendChild(info);
+        itemsGrid.appendChild(row);
+      });
+
+      wrap.appendChild(itemsGrid);
+    }
 
     list.appendChild(wrap);
   });
 }
 
 async function loadUserOrders(user) {
-  const status = document.getElementById('orders-status');
-  if (status) status.textContent = 'Carregando pedidos…';
+  const statusEl = document.getElementById('orders-status');
+  if (statusEl) statusEl.textContent = 'Carregando pedidos…';
 
   try {
-    const q = query(
-      collection(db, 'orders'),
-      where('userId', '==', user.uid),
-      orderBy('data_pedido', 'desc'),
-      limit(20)
-    );
-    const snap = await getDocs(q);
-    const orders = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    renderOrders(orders);
-    if (status) status.textContent = '';
-  } catch {
+    // Camada 1: pedidos finalizados na coleção `orders`
+    let completedOrders = [];
+    try {
+      const q = query(
+        collection(db, 'orders'),
+        where('userId', '==', user.uid),
+        limit(20),
+      );
+      const snap = await getDocs(q);
+      completedOrders = snap.docs.map((d) => ({ id: d.id, ...d.data(), _source: 'orders' }));
+    } catch (err) {
+      console.warn('[Perfil] Falha ao carregar orders:', err);
+    }
+
+    // Camada 2: rascunho com pagamento iniciado (orders_draft, doc ID = user.uid)
+    let draftOrders = [];
+    try {
+      const draftSnap = await getDoc(doc(db, 'orders_draft', user.uid));
+      if (draftSnap.exists()) {
+        const d = draftSnap.data() || {};
+        // Só exibe o draft se um pagamento foi iniciado (tem mercadopago_id)
+        if (d.mercadopago_id) {
+          const jaFinalizado = completedOrders.some((o) => o.mercadopago_id === d.mercadopago_id);
+          if (!jaFinalizado) {
+            draftOrders.push({ id: draftSnap.id, ...d, _source: 'orders_draft' });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[Perfil] Falha ao carregar orders_draft:', err);
+    }
+
+    // Combina e ordena por data (mais recente primeiro)
+    const getMs = (o) => {
+      const ts = o.data_pedido ?? o.approvedAt ?? o.updatedAt ?? o.createdAt;
+      if (!ts) return 0;
+      if (typeof ts?.toMillis === 'function') return ts.toMillis();
+      return new Date(ts).getTime() || 0;
+    };
+    const allOrders = [...completedOrders, ...draftOrders].sort((a, b) => getMs(b) - getMs(a));
+
+    renderOrders(allOrders);
+    if (statusEl) statusEl.textContent = '';
+  } catch (err) {
+    console.error('[Perfil] Erro ao carregar pedidos:', err);
     const list = document.getElementById('orders-list');
     const empty = document.getElementById('orders-empty');
     if (list) list.innerHTML = '';
     if (empty) empty.hidden = true;
-    if (status) status.textContent = 'Não foi possível carregar seus pedidos agora.';
+    if (statusEl) statusEl.textContent = 'Não foi possível carregar seus pedidos agora.';
   }
 }
 
@@ -469,7 +579,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const data = await loadUserProfile(user);
 
     setText('profile-email', data.email || '—');
-    setText('profile-uid', user.uid || '—');
 
     setValue('nome', data.nome || '');
     setValue('telefone', data.telefone || '');

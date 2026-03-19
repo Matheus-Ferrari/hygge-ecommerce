@@ -8,11 +8,22 @@
   <link rel="icon" href="/img/logopreta.png" type="image/png" sizes="any" />
   <link rel="stylesheet" href="src/css/style.css" />
   <link rel="stylesheet" href="src/css/footer.css" />
+  <style>
+    #main-header.header {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      z-index: 9999 !important;
+      background: var(--verde-header) !important;
+      box-shadow: var(--sombra-header-fixo) !important;
+    }
+  </style>
 </head>
 <body>
   <h1 class="sr-only">Pagamento pendente - Hygge Games</h1>
 
-  <header id="main-header" class="header solid" style="position:fixed; top:0; left:0; width:100vw; z-index:9999;">
+  <header id="main-header" class="header solid">
     <button class="menu-btn" aria-label="Abrir menu">
       <span class="hamburger"></span>
       <span class="hamburger"></span>
@@ -38,14 +49,29 @@
   <main style="padding-top:120px;">
     <section class="container-large" style="max-width: 980px; margin: 0 auto;">
       <section class="produto-card" style="padding: 22px;">
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom: 8px;">
-          <h1 class="section-title" style="margin:0; font-size:2rem;">Pagamento pendente</h1>
+
+        <!-- Cabeçalho de status -->
+        <div style="display:flex; align-items:center; gap:14px; margin-bottom:16px;">
+          <div id="status-icon" style="width:40px; height:40px; border-radius:50%; background:#e8a400; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0; transition:background 0.3s;">⏳</div>
+          <div>
+            <h1 id="status-title" class="section-title" style="margin:0; font-size:1.9rem;">Aguardando pagamento</h1>
+            <p id="status-subtitle" style="margin:4px 0 0 0; font-size:0.97rem; color:#666;">Verificando o status do seu pagamento...</p>
+          </div>
         </div>
 
-        <p style="font-size:1.1rem; margin:0 0 18px 0;">Seu pagamento ainda não foi confirmado. Assim que ele for aprovado, seu pedido aparecerá em <strong>Meus pedidos</strong>.</p>
+        <!-- Barra de verificação animada -->
+        <div id="polling-bar" style="background:#f4f1ed; border-radius:8px; overflow:hidden; height:6px; margin-bottom:20px;">
+          <div id="polling-progress" style="height:100%; width:0%; background:#e8a400; transition:width 0.4s ease; border-radius:8px;"></div>
+        </div>
 
+        <!-- Mensagem de acompanhamento automático -->
+        <div id="auto-redirect-msg" style="background:#fff8e1; border:1px solid #ffe082; border-radius:12px; padding:12px 16px; margin-bottom:18px; font-size:0.95rem; color:#795548;">
+          🔄 <strong>Monitoramento ativo:</strong> Assim que o pagamento for confirmado, você será redirecionado automaticamente para a página de confirmação.
+        </div>
+
+        <!-- Resumo do pedido -->
         <div id="order-summary" style="background:#f4f1ed; border-radius:16px; padding:14px 16px; margin-bottom:20px;">
-          <p style="margin:0;">Resumo do pedido indisponível.</p>
+          <p style="margin:0; color:#888;">Carregando resumo do pedido...</p>
         </div>
 
         <div style="display:flex; flex-wrap:wrap; gap:10px;">
@@ -59,33 +85,244 @@
   <div id="footer-container"></div>
 
   <script>
-    (function () {
-      const summaryEl = document.getElementById('order-summary');
+  // =====================================================================
+  // PENDENTE.HTML — Monitoramento automático do Pix com Mercado Pago
+  // =====================================================================
+  (function () {
+    'use strict';
+
+    const STATUS_API = 'https://us-central1-e-commerce-hygge.cloudfunctions.net/consultarStatusPedido';
+    const REDIRECT_APPROVED = '/obrigado';
+    const REDIRECT_REJECTED = '/carrinho';
+    const POLL_INTERVAL_MS = 4000;   // Consulta a cada 4 segundos
+    const MAX_POLLS = 150;            // Máximo ~10 minutos de monitoramento
+
+    let pollCount = 0;
+    let pollTimer = null;
+    let redirecting = false;
+
+    // --- Elementos de UI ---
+    const titleEl       = document.getElementById('status-title');
+    const subtitleEl    = document.getElementById('status-subtitle');
+    const iconEl        = document.getElementById('status-icon');
+    const progressEl    = document.getElementById('polling-progress');
+    const barEl         = document.getElementById('polling-bar');
+    const msgEl         = document.getElementById('auto-redirect-msg');
+    const summaryEl     = document.getElementById('order-summary');
+
+    // --- Extrair parâmetros da URL (Mercado Pago envia ao redirecionar) ---
+    const params = new URLSearchParams(window.location.search);
+    const urlExternalRef  = params.get('external_reference') || '';
+    const urlPaymentId    = params.get('payment_id') || params.get('collection_id') || '';
+    const urlStatus       = params.get('status') || params.get('collection_status') || '';
+
+    // --- Obter external_reference também do last_order (fallback) ---
+    let lastOrder = null;
+    try {
       const raw = localStorage.getItem('last_order');
-      if (!raw || !summaryEl) return;
+      if (raw) lastOrder = JSON.parse(raw);
+    } catch { /* ignore */ }
+
+    const externalRef = urlExternalRef
+      || String(lastOrder?.userId || lastOrder?.ownerId || '')
+      || '';
+    const paymentId   = urlPaymentId || '';
+
+    // --- Renderizar resumo do pedido (do localStorage) ---
+    function renderSummary(order) {
+      if (!summaryEl) return;
+      if (!order) {
+        summaryEl.innerHTML = '<p style="margin:0; color:#888;">Resumo do pedido indisponível.</p>';
+        return;
+      }
+
+      const itens     = Array.isArray(order?.itens) ? order.itens : [];
+      const subtotal  = Number(order?.subtotal || 0);
+      const frete     = Number(order?.frete || 0);
+      const total     = Number(order?.total || 0);
+      const metodo    = String(order?.metodoEntrega || order?.freteMetodo || '').trim();
+      const fmt       = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+      const itensHtml = itens.map((item) => {
+        const nome  = String(item?.nome || 'Produto');
+        const img   = String(item?.imagem || '/img/logopreta.png');
+        const qtd   = Number(item?.quantidade ?? 1);
+        const preco = Number(item?.preco ?? 0);
+        return `
+          <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #e2dcd6;">
+            <img src="${img}" alt="${nome}" style="width:52px;height:52px;object-fit:cover;border-radius:10px;flex-shrink:0;background:#ece7e0;" onerror="this.src='/img/logopreta.png'" />
+            <div style="flex:1;min-width:0;">
+              <p style="margin:0 0 3px 0;font-weight:600;font-size:0.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${nome}</p>
+              <p style="margin:0;color:#666;font-size:0.87rem;">Qtd: ${qtd} &nbsp;·&nbsp; ${fmt(preco)}</p>
+            </div>
+          </div>`;
+      }).join('');
+
+      summaryEl.innerHTML = `
+        ${itensHtml.length ? itensHtml : '<p style="margin:0;color:#888;">Nenhum item registrado.</p>'}
+        <div style="margin-top:12px;display:flex;flex-direction:column;gap:4px;">
+          <p style="margin:0;font-size:0.93rem;">Subtotal: <strong>${fmt(subtotal)}</strong></p>
+          <p style="margin:0;font-size:0.93rem;">Frete: <strong>${frete > 0 ? fmt(frete) : 'Grátis'}</strong></p>
+          ${metodo ? `<p style="margin:0;font-size:0.93rem;">Entrega: <strong>${metodo === 'retirada' ? 'Retirada' : metodo}</strong></p>` : ''}
+          <p style="margin:4px 0 0 0;font-size:1.03rem;border-top:1px solid #d9d3cc;padding-top:8px;">Total: <strong>${fmt(total)}</strong></p>
+        </div>`;
+    }
+
+    // --- Atualizar UI de status ---
+    function setStatusUI(state) {
+      if (!titleEl || !subtitleEl || !iconEl) return;
+      const states = {
+        pending: {
+          icon: '⏳', bg: '#e8a400',
+          title: 'Aguardando pagamento',
+          subtitle: 'Verifique se o Pix foi concluído no aplicativo do seu banco.',
+        },
+        checking: {
+          icon: '🔄', bg: '#1565c0',
+          title: 'Verificando pagamento...',
+          subtitle: 'Estamos confirmando o seu pagamento. Aguarde.',
+        },
+        approved: {
+          icon: '✓', bg: '#2e7d32',
+          title: 'Pagamento aprovado!',
+          subtitle: 'Redirecionando para a confirmação do pedido...',
+        },
+        rejected: {
+          icon: '✗', bg: '#c62828',
+          title: 'Pagamento não aprovado',
+          subtitle: 'O pagamento foi recusado ou cancelado.',
+        },
+        timeout: {
+          icon: '⌛', bg: '#616161',
+          title: 'Tempo esgotado',
+          subtitle: 'Não conseguimos confirmar o pagamento automaticamente. Verifique em Meus Pedidos.',
+        },
+      };
+      const s = states[state] || states.pending;
+      iconEl.textContent = s.icon;
+      iconEl.style.background = s.bg;
+      titleEl.textContent = s.title;
+      subtitleEl.textContent = s.subtitle;
+    }
+
+    // --- Animar barra de progresso de forma cíclica ---
+    function animateProgress() {
+      if (!progressEl) return;
+      let p = 0;
+      const step = () => {
+        if (redirecting) return;
+        p = (p + 2) % 110;
+        progressEl.style.width = Math.min(p, 100) + '%';
+        requestAnimationFrame(() => setTimeout(step, 50));
+      };
+      step();
+    }
+
+    // --- Redirecionar para página de obrigado ---
+    function redirectApproved() {
+      redirecting = true;
+      clearTimeout(pollTimer);
+      setStatusUI('approved');
+      if (progressEl) progressEl.style.width = '100%';
+      if (msgEl) {
+        msgEl.style.background = '#e8f5e9';
+        msgEl.style.borderColor = '#a5d6a7';
+        msgEl.style.color = '#2e7d32';
+        msgEl.innerHTML = '✅ <strong>Pagamento confirmado!</strong> Redirecionando...';
+      }
+      // Pequeno delay para o usuário ver o feedback antes de redirecionar
+      setTimeout(() => { window.location.href = REDIRECT_APPROVED; }, 1800);
+    }
+
+    // --- Pagamento recusado: exibe alerta na própria página, sem redirecionar ---
+    function redirectRejected(msg) {
+      redirecting = true;
+      clearTimeout(pollTimer);
+      setStatusUI('rejected');
+      if (barEl) barEl.style.display = 'none';
+      if (msgEl) {
+        msgEl.style.background = '#ffebee';
+        msgEl.style.borderColor = '#ef9a9a';
+        msgEl.style.color = '#c62828';
+        msgEl.innerHTML = `❌ <strong>${msg || 'Pagamento recusado.'}</strong><br><span style="font-size:0.92rem;">Você pode tentar novamente com outro método de pagamento.</span>
+          <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+            <a href="/carrinho" class="btn-comprar" style="margin:0; font-size:0.95rem;">Tentar novamente</a>
+            <a href="/todos-os-jogos" class="btn-mostrar-jogos" style="font-size:0.95rem;">Continuar comprando</a>
+          </div>`;
+      }
+    }
+
+    // --- Consultar status no backend ---
+    async function checkStatus() {
+      if (redirecting) return;
+
+      pollCount++;
+      setStatusUI(pollCount === 1 ? 'pending' : 'checking');
+
+      // Timeout de monitoramento
+      if (pollCount > MAX_POLLS) {
+        setStatusUI('timeout');
+        if (barEl) barEl.style.display = 'none';
+        if (msgEl) {
+          msgEl.style.background = '#f5f5f5';
+          msgEl.style.borderColor = '#bdbdbd';
+          msgEl.style.color = '#555';
+          msgEl.textContent = '⌛ Monitoramento encerrado. Verifique o status em Meus Pedidos.';
+        }
+        return;
+      }
+
+      // Se url já indicou aprovação (payment redirected with status=approved)
+      if (pollCount === 1 && urlStatus === 'approved') {
+        redirectApproved();
+        return;
+      }
+
+      // Não há referência para consultar — mostra estado de espera sem erros
+      if (!externalRef && !paymentId) {
+        console.warn('[Pendente] external_reference e payment_id ausentes. Aguardando...');
+        pollTimer = setTimeout(checkStatus, POLL_INTERVAL_MS);
+        return;
+      }
 
       try {
-        const order = JSON.parse(raw);
-        const itens = Array.isArray(order?.itens) ? order.itens : [];
-        const subtotal = Number(order?.subtotal || 0);
-        const frete = Number(order?.frete || 0);
-        const total = Number(order?.total || 0);
-        const metodoEntrega = String(order?.metodoEntrega || '').trim();
-        const freteMetodo = String(order?.freteMetodo || '').trim();
+        const qp = new URLSearchParams();
+        if (externalRef) qp.set('external_reference', externalRef);
+        if (paymentId)   qp.set('payment_id', paymentId);
 
-        const format = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        const resp = await fetch(`${STATUS_API}?${qp.toString()}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
-        summaryEl.innerHTML = `
-          <p style="margin:0 0 8px 0;"><strong>Itens:</strong> ${itens.length}</p>
-          <p style="margin:0 0 6px 0;">Subtotal: <strong>${format(subtotal)}</strong></p>
-          <p style="margin:0 0 6px 0;">Frete: <strong>${format(frete)}</strong></p>
-          ${(freteMetodo || metodoEntrega) ? `<p style="margin:0 0 6px 0;">Entrega: <strong>${(metodoEntrega === 'retirada') ? 'Retirada' : (freteMetodo || metodoEntrega)}</strong></p>` : ''}
-          <p style="margin:0;">Total: <strong>${format(total)}</strong></p>
-        `;
-      } catch {
-        // Mantém fallback.
+        const result = await resp.json();
+        console.log('[Pendente] Status consultado:', result);
+
+        if (result.approved === true || result.status === 'approved') {
+          redirectApproved();
+          return;
+        }
+
+        const finalSt = String(result.status || '').toLowerCase();
+        if (finalSt === 'rejected' || finalSt === 'cancelled' || finalSt === 'refunded') {
+          redirectRejected('O pagamento foi recusado ou cancelado.');
+          return;
+        }
+
+        // Ainda pending — continua polling
+      } catch (err) {
+        console.warn('[Pendente] Erro ao consultar status:', err.message);
       }
-    })();
+
+      pollTimer = setTimeout(checkStatus, POLL_INTERVAL_MS);
+    }
+
+    // --- Inicialização ---
+    renderSummary(lastOrder);
+    setStatusUI('pending');
+    animateProgress();
+
+    // Inicia polling após 2 segundos (dá tempo do webhook chegar)
+    pollTimer = setTimeout(checkStatus, 2000);
+  })();
   </script>
 
   <script>

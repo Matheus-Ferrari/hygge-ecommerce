@@ -344,7 +344,7 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
         failure: "https://hyggegames.com.br/carrinho",
         pending: "https://hyggegames.com.br/pendente",
       },
-      auto_return: "approved",
+      auto_return: "all",
       external_reference: docId,
       payment_methods: { installments: 12 },
     };
@@ -420,6 +420,7 @@ exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
 exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
   try {
     const {action, data} = req.body;
+    logger.info("[Webhook] Notificação recebida.", {action, paymentDataId: data?.id});
 
     if (action === "payment.created" || action === "payment.updated") {
       const payment = new Payment(mpClient);
@@ -428,6 +429,13 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
       if (paymentDetails.status === "approved") {
         const uid = paymentDetails.external_reference;
         const paymentId = String(paymentDetails.id);
+        logger.info("[Webhook] Pagamento aprovado.", {
+          uid,
+          paymentId,
+          externalReference: uid,
+          paymentMethod: paymentDetails?.payment_method_id,
+          paymentType: paymentDetails?.payment_type_id,
+        });
 
         // Busca explícita do rascunho pelo external_reference (ID do draft)
         let draftData = null;
@@ -436,17 +444,41 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
             const draftSnap = await db.collection("orders_draft").doc(String(uid)).get();
             draftData = draftSnap.exists ? (draftSnap.data() || {}) : null;
             if (!draftData) {
-              logger.warn("orders_draft não encontrado para pagamento aprovado.", {uid, paymentId});
+              logger.warn("[Webhook] orders_draft não encontrado para uid.", {uid, paymentId});
+            } else {
+              logger.info("[Webhook] orders_draft encontrado.", {uid, paymentId});
             }
           } catch (err) {
-            logger.warn("Falha ao buscar orders_draft por external_reference.", {
+            logger.warn("[Webhook] Falha ao buscar orders_draft por external_reference.", {
               uid: String(uid),
               paymentId,
               detalhes: err?.message || String(err),
             });
           }
         }
-        
+
+        // ATUALIZAÇÃO EXPLÍCITA: persiste approved no draft ANTES de qualquer outra operação.
+        // Isso permite que o front consulte o status via endpoint de polling.
+        if (uid) {
+          try {
+            await db.collection("orders_draft").doc(String(uid)).set({
+              status_pagamento: "approved",
+              mercadopago_id: paymentId,
+              payment_id: paymentId,
+              external_reference: String(uid),
+              approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, {merge: true});
+            logger.info("[Webhook] orders_draft marcado como approved explicitamente.", {uid, paymentId});
+          } catch (errDraft) {
+            logger.error("[Webhook] Falha ao marcar orders_draft como approved.", {
+              uid,
+              paymentId,
+              detalhes: errDraft?.message || String(errDraft),
+            });
+          }
+        }
+
         // Prioridade MÁXIMA para o rascunho do site. O MP vira o fallback.
         const emailCru = draftData?.email || 
         draftData?.cliente?.email || 
@@ -877,8 +909,130 @@ exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => 
 
 
 
+/**
+ * 6. FUNÇÃO: Consultar Status do Pedido (polling do front)
+ * Usada pela página /pendente para detectar aprovação Pix e redirecionar para /obrigado.
+ */
+exports.consultarStatusPedido = onRequest({cors: true}, async (req, res) => {
+  try {
+    const externalReference =
+      req.query.external_reference ||
+      req.body?.external_reference ||
+      null;
+    const paymentId =
+      req.query.payment_id ||
+      req.body?.payment_id ||
+      null;
+
+    logger.info("[consultarStatusPedido] Consulta recebida.", {externalReference, paymentId});
+
+    if (!externalReference && !paymentId) {
+      return res.status(400).json({error: "Informe external_reference ou payment_id."});
+    }
+
+    // Camada 1: buscar em `orders` pelo payment_id (pedido já finalizado)
+    if (paymentId) {
+      try {
+        const orderSnap = await db.collection("orders").doc(String(paymentId)).get();
+        if (orderSnap.exists) {
+          const d = orderSnap.data() || {};
+          logger.info("[consultarStatusPedido] Encontrado em orders.", {paymentId});
+          return res.json({
+            found: true,
+            source: "orders",
+            orderId: orderSnap.id,
+            paymentId: d.mercadopago_id || paymentId,
+            externalReference: d.external_reference || externalReference,
+            status: d.status_pagamento || "approved",
+            approved: true,
+            total: d.valor_total ?? d.valores?.total ?? null,
+            itens: d.itens || null,
+            cliente: d.cliente || null,
+          });
+        }
+      } catch (e) {
+        logger.warn("[consultarStatusPedido] Falha ao buscar em orders.", {paymentId, detalhes: e?.message});
+      }
+    }
+
+    // Camada 2: buscar em `orders_draft` pelo external_reference (doc ID = userId)
+    if (externalReference) {
+      try {
+        const draftSnap = await db.collection("orders_draft").doc(String(externalReference)).get();
+        if (draftSnap.exists) {
+          const d = draftSnap.data() || {};
+          const approved = d.status_pagamento === "approved";
+          logger.info("[consultarStatusPedido] Encontrado em orders_draft por external_reference.", {externalReference, approved});
+          return res.json({
+            found: true,
+            source: "orders_draft",
+            orderId: draftSnap.id,
+            paymentId: d.mercadopago_id || d.payment_id || paymentId,
+            externalReference: externalReference,
+            status: d.status_pagamento || "pending",
+            approved,
+            total: d.total ?? null,
+            itens: d.produtos || null,
+            cliente: d.cliente || {nome: d.nome || null, email: d.email || null},
+          });
+        }
+      } catch (e) {
+        logger.warn("[consultarStatusPedido] Falha ao buscar em orders_draft por external_reference.", {externalReference, detalhes: e?.message});
+      }
+    }
+
+    // Camada 3: buscar em `orders_draft` pelo campo mercadopago_id / payment_id
+    if (paymentId) {
+      try {
+        const draftByMpSnap = await db
+          .collection("orders_draft")
+          .where("mercadopago_id", "==", String(paymentId))
+          .limit(1)
+          .get();
+        if (!draftByMpSnap.empty) {
+          const doc = draftByMpSnap.docs[0];
+          const d = doc.data() || {};
+          const approved = d.status_pagamento === "approved";
+          logger.info("[consultarStatusPedido] Encontrado em orders_draft por mercadopago_id.", {paymentId, approved});
+          return res.json({
+            found: true,
+            source: "orders_draft_by_payment_id",
+            orderId: doc.id,
+            paymentId: paymentId,
+            externalReference: d.external_reference || externalReference,
+            status: d.status_pagamento || "pending",
+            approved,
+            total: d.total ?? null,
+            itens: d.produtos || null,
+            cliente: d.cliente || {nome: d.nome || null, email: d.email || null},
+          });
+        }
+      } catch (e) {
+        logger.warn("[consultarStatusPedido] Falha ao buscar em orders_draft por mercadopago_id.", {paymentId, detalhes: e?.message});
+      }
+    }
+
+    // Não encontrado
+    logger.info("[consultarStatusPedido] Pedido não encontrado.", {externalReference, paymentId});
+    return res.json({
+      found: false,
+      source: null,
+      orderId: null,
+      paymentId: paymentId,
+      externalReference: externalReference,
+      status: "not_found",
+      approved: false,
+    });
+  } catch (error) {
+    logger.error("[consultarStatusPedido] Erro ao consultar status:", error);
+    res.status(500).json({error: "Erro interno ao consultar status do pedido"});
+  }
+});
+
+
 // firebase deploy --only functions
 
-//Checkout: https://us-central1-e-commerce-hygge.cloudfunctions.net/criarPreferencia
-//Frete:    https://us-central1-e-commerce-hygge.cloudfunctions.net/calcularFrete
-//Webhook:  https://us-central1-e-commerce-hygge.cloudfunctions.net/notificacaoPagamento
+//Checkout:     https://us-central1-e-commerce-hygge.cloudfunctions.net/criarPreferencia
+//Frete:        https://us-central1-e-commerce-hygge.cloudfunctions.net/calcularFrete
+//Webhook:      https://us-central1-e-commerce-hygge.cloudfunctions.net/notificacaoPagamento
+//StatusPedido: https://us-central1-e-commerce-hygge.cloudfunctions.net/consultarStatusPedido
