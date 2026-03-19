@@ -447,18 +447,14 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
           }
         }
         
-        // Tenta capturar o e-mail de várias fontes do Mercado Pago
-        let payerEmail = paymentDetails?.payer?.email ||
-                         paymentDetails?.additional_info?.payer?.email ||
-                         paymentDetails?.payer?.payer_email ||
-                         null;
+        // Prioridade MÁXIMA para o rascunho do site. O MP vira o fallback.
+        const emailCru = draftData?.email || 
+        draftData?.cliente?.email || 
+        paymentDetails?.payer?.email || 
+        paymentDetails?.additional_info?.payer?.email || 
+        "";
 
-        // Fallback de e-mail: força uso do e-mail do rascunho se o MP não enviar
-        if (!payerEmail && draftData) {
-          const fromDraft = draftData?.email || draftData?.cliente?.email || null;
-          const clean = String(fromDraft || "").trim();
-          if (clean) payerEmail = clean;
-        }
+        const payerEmail = String(emailCru).trim();
 
         const items = paymentDetails?.additional_info?.items || [];
         const total = paymentDetails?.transaction_amount ?? 0;
@@ -615,9 +611,10 @@ exports.callbackBling = onRequest({cors: true}, async (req, res) => {
 });
 
 /**
- * Envia o pedido para o Bling V3 com resiliência
+ * Envia o pedido para o Bling V3 com resiliência e controle de taxa (Rate Limit)
  */
 async function enviarParaBling(dadosPagamento) {
+  // Função para criar as pausas entre as requisições (evita o erro TOO_MANY_REQUESTS)
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)); 
   
   try {
@@ -632,7 +629,7 @@ async function enviarParaBling(dadosPagamento) {
     let draftData = {};
     if (uid) {
       try {
-        const draftDoc = await db.collection("orders_draft").doc(uid).get();
+        const draftDoc = await admin.firestore().collection("orders_draft").doc(uid).get();
         draftData = draftDoc.exists ? (draftDoc.data() || {}) : {};
       } catch (e) {
         logger.warn("Não foi possível ler orders_draft para o Bling.", {uid, detalhes: e?.message || String(e)});
@@ -662,21 +659,26 @@ async function enviarParaBling(dadosPagamento) {
       } catch (e) {
         logger.warn("Busca por e-mail falhou no Bling.", {detalhes: e?.response?.data || e?.message});
       }
+      await sleep(400); // PAUSA 1: Garante respiro na API
     }
 
-    // 2b. Se não achou por e-mail e tem CPF, tenta por documento (incluindo inativos via criterio=1)
+    // 2b. Se não achou por e-mail e tem CPF, tenta por documento
     if (!idDoContato && cpfLimpo) {
       try {
         const buscaDoc = await axios.get(
           `https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${encodeURIComponent(cpfLimpo)}`,
           {headers},
         );
+        await sleep(400); // PAUSA 2: Respiro antes da próxima busca
+
         let lista = Array.isArray(buscaDoc.data?.data) ? buscaDoc.data.data : [];
         if (lista.length === 0) {
           const buscaGeral = await axios.get(
             "https://www.bling.com.br/Api/v3/contatos?criterio=1",
             {headers},
           );
+          await sleep(400); // PAUSA 3: Respiro após busca por inativos
+
           const geral = Array.isArray(buscaGeral.data?.data) ? buscaGeral.data.data : [];
           lista = geral.filter((c) => String(c?.numeroDocumento || "").replace(/\D/g, "") === cpfLimpo);
         }
@@ -689,53 +691,88 @@ async function enviarParaBling(dadosPagamento) {
       }
     }
 
-// 3. Se ainda não tem ID, cria um novo contato COM ENDEREÇO
-if (!idDoContato) {
-  const payloadContato = {
-    nome: nomeCompleto,
-    tipo: "F",
-    endereco: {
-      geral: {
-        endereco: addrDraft?.endereco || "Endereço não informado",
-        numero: String(addrDraft?.numero || "S/N"),
-        bairro: addrDraft?.complemento || "Centro", // O Bling EXIGE bairro
-        municipio: addrDraft?.cidade || "Cidade",
-        uf: addrDraft?.estado || "SP",
-        cep: addrDraft?.cep || "00000000"
+    // 3. Se ainda não tem ID, cria um novo contato COM ENDEREÇO COMPLETO
+    if (!idDoContato) {
+      const payloadContato = {
+        nome: nomeCompleto,
+        tipo: "F",
+        situacao: "A",
+        endereco: {
+          geral: {
+            endereco: addrDraft?.endereco || "Endereço não informado",
+            numero: String(addrDraft?.numero || "S/N"),
+            bairro: addrDraft?.complemento || "Centro", // O Bling EXIGE bairro, usamos complemento ou fallback
+            municipio: addrDraft?.cidade || "Cidade",
+            uf: addrDraft?.estado || "SP",
+            cep: addrDraft?.cep || "00000000"
+          }
+        }
+      };
+      if (emailContato) payloadContato.email = emailContato;
+      if (cpfLimpo) payloadContato.numeroDocumento = cpfLimpo;
+
+      try {
+        const contatoResp = await axios.post("https://www.bling.com.br/Api/v3/contatos", payloadContato, {headers});
+        idDoContato = contatoResp.data?.data?.id || null;
+      } catch (errC) {
+        throw errC;
       }
+      await sleep(400); // PAUSA 4: Respiro após criar contato
     }
-  };
-  if (emailContato) payloadContato.email = emailContato;
-  if (cpfLimpo) payloadContato.numeroDocumento = cpfLimpo;
 
-  try {
-    const contatoResp = await axios.post("https://www.bling.com.br/Api/v3/contatos", payloadContato, {headers});
-    idDoContato = contatoResp.data?.data?.id || null;
-  } catch (errC) {
-    // Fallback duplicidade omitido por brevidade (mantenha o seu catch atual aqui se quiser)
-    throw errC;
-  }
-}
+    await sleep(800); // PAUSA FINAL OBRIGATÓRIA antes de criar a venda
 
-    await sleep(800);
-
-    // 4. Mapear itens e endereço
-    const produtosSnap = await db.collection("products").get();
+    // 4. Mapear itens e endereço para a Venda
+    const produtosSnap = await admin.firestore().collection("products").get();
+        
     const produtosMap = {};
-    produtosSnap.forEach((doc) => { produtosMap[doc.id] = doc.data(); });
+    const produtosPorNome = {};
+    produtosSnap.forEach((doc) => { 
+      const data = doc.data();
+      produtosMap[doc.id] = data; 
+      if (data.nome) produtosPorNome[String(data.nome).trim()] = data;
+    });
 
-    const itensMapeados = (dadosPagamento.additional_info?.items || [])
-      .filter((item) => item?.id !== "FRETE")
-      .map((item) => {
-        const produtoInfo = produtosMap[String(item?.id ?? "")];
-        const skuReal = produtoInfo?.SKU || produtoInfo?.sku || item?.id;
-        return {
-          produto: { codigo: String(skuReal) },
-          quantidade: Number(item?.quantity ?? 1),
-          valor: Number(item?.unit_price ?? 0),
-          unidade: "UN"
-        };
-      });
+    const itensMapeados = [];
+    const listaItens = dadosPagamento.additional_info?.items || [];
+
+    for (const item of listaItens) {
+      if (item?.id === "FRETE") continue;
+
+      const idVindoDoMp = String(item?.id ?? "");
+      const nomeVindoDoMp = String(item?.title ?? "").trim();
+      
+      const produtoInfo = produtosMap[idVindoDoMp] || produtosPorNome[nomeVindoDoMp];
+      const skuReal = produtoInfo?.SKU || produtoInfo?.sku || idVindoDoMp;
+
+      let idInternoBling = null;
+
+      try {
+        // Busca o ID interno do produto no Bling pelo SKU para forçar o vínculo perfeito
+        const buscaProd = await axios.get(`https://www.bling.com.br/Api/v3/produtos?codigo=${encodeURIComponent(skuReal)}`, {headers});
+        if (buscaProd.data?.data?.length > 0) {
+          idInternoBling = buscaProd.data.data[0].id;
+        }
+        await sleep(350); // Freio do Rate Limit
+      } catch (errProd) {
+        logger.warn("Aviso: Produto não encontrado na busca prévia do Bling", {skuReal});
+      }
+
+      const objItem = {
+        codigo: String(skuReal),
+        descricao: String(nomeVindoDoMp || produtoInfo?.nome || "Produto").trim(),
+        quantidade: Number(item?.quantity ?? 1),
+        valor: Number(item?.unit_price ?? 0),
+        unidade: "UN"
+      };
+
+      // Se acharmos o ID interno, dizemos ao Bling para NÃO tentar cadastrar nada!
+      if (idInternoBling) {
+        objItem.produto = { id: idInternoBling };
+      }
+
+      itensMapeados.push(objItem);
+    }
 
     const hoje = new Date().toISOString().split("T")[0];
     const addrPay = dadosPagamento.additional_info?.shipment?.receiver_address || {};
