@@ -360,7 +360,7 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
 
 
 /**
- * 2. FUNÇÃO: Cálculo de Frete (MELHOR ENVIO)
+ * 2. FUNÇÃO: Cálculo de Frete (MELHOR ENVIO) - Filtrado corretamente por Transportadora
  */
 exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
   if (req.method !== "POST") return res.status(405).send("Método não permitido");
@@ -379,8 +379,7 @@ exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
         weight: 0.35, 
         insurance_value: Number(item.preco),
         quantity: item.quantidade,
-      })),
-      services: "1,2,17" 
+      }))
     };
 
     const response = await axios.post(
@@ -397,13 +396,38 @@ exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
     );
 
     const opcoes = response.data
-      .filter((s) => s.price != null && !s.error)
-      .map((s) => ({
-        id: s.id,
-        nome: s.name,
-        valor: Number(s.price),
-        prazo: s.delivery_range?.max ? `${s.delivery_range.max} dias úteis` : '',
-      }))
+      .filter((s) => {
+        if (s.price == null || s.error) return false;
+        
+        const nomeServico = String(s.name || "").toLowerCase();
+        // Aqui está o segredo: buscar o nome da EMPRESA responsável por aquele frete
+        const nomeEmpresa = String(s.company?.name || "").toLowerCase();
+
+        // 1. Libera qualquer serviço que a empresa seja a TOTAL EXPRESS
+        if (nomeEmpresa.includes("total express")) return true;
+
+        // 2. Libera apenas PAC e SEDEX (ignorando ".Package" da Jadlog)
+        //if (nomeServico.includes("sedex")) return true;
+        //if (/\bpac\b/.test(nomeServico)) return true;
+
+        return false;
+      })
+      .map((s) => {
+        const nomeEmpresaOriginal = s.company?.name || "";
+        let nomeExibicao = s.name;
+
+        // Bônus: Se for Total Express, concatena o nome para não ficar só "Standard" na tela
+        if (nomeEmpresaOriginal.toLowerCase().includes("total express")) {
+          nomeExibicao = `Total Express - ${s.name}`;
+        }
+
+        return {
+          id: s.id,
+          nome: nomeExibicao,
+          valor: Number(s.price),
+          prazo: s.delivery_range?.max ? `${s.delivery_range.max} dias úteis` : '',
+        };
+      })
       .sort((a, b) => a.valor - b.valor);
 
     res.json(opcoes);
@@ -412,7 +436,6 @@ exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
     res.status(500).json({error: "Erro ao calcular frete oficial"});
   }
 });
-
 
 /**
  * 3. FUNÇÃO: Webhook de Notificação Mercado Pago
