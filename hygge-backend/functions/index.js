@@ -262,14 +262,12 @@ async function finalizeOrderInFirestore({
 admin.initializeApp();
 const db = admin.firestore();
 
-// Inicializa o cliente do Mercado Pago usando .value()
 const mpClient = new MercadoPagoConfig({
   accessToken: mpKeyParam.value(),
 });
 
 /**
  * 1. FUNÇÃO: Criar Preferência (Checkout Mercado Pago)
- * Agora ela grava o rascunho no Firestore para garantir que o Webhook funcione.
  */
 exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
   if (req.method !== "POST") {
@@ -285,7 +283,6 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
       return;
     }
 
-    // Regra de Ouro 1: docId = usuarioId do front
     const docId = String(usuarioId);
     const draftRef = admin.firestore().collection("orders_draft").doc(docId);
 
@@ -315,7 +312,6 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 
-    // Regra de Ouro 2: external_reference = docId
     const mpClient = new MercadoPagoConfig({ accessToken: mpKeyParam.value() });
     const preference = new Preference(mpClient);
 
@@ -358,9 +354,8 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
   }
 });
 
-
 /**
- * 2. FUNÇÃO: Cálculo de Frete (MELHOR ENVIO) - Filtrado corretamente por Transportadora
+ * 2. FUNÇÃO: Cálculo de Frete (MELHOR ENVIO)
  */
 exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
   if (req.method !== "POST") return res.status(405).send("Método não permitido");
@@ -398,29 +393,16 @@ exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
     const opcoes = response.data
       .filter((s) => {
         if (s.price == null || s.error) return false;
-        
-        const nomeServico = String(s.name || "").toLowerCase();
-        // Aqui está o segredo: buscar o nome da EMPRESA responsável por aquele frete
         const nomeEmpresa = String(s.company?.name || "").toLowerCase();
-
-        // 1. Libera qualquer serviço que a empresa seja a TOTAL EXPRESS
         if (nomeEmpresa.includes("total express")) return true;
-
-        // 2. Libera apenas PAC e SEDEX (ignorando ".Package" da Jadlog)
-        //if (nomeServico.includes("sedex")) return true;
-        //if (/\bpac\b/.test(nomeServico)) return true;
-
         return false;
       })
       .map((s) => {
         const nomeEmpresaOriginal = s.company?.name || "";
         let nomeExibicao = s.name;
-
-        // Bônus: Se for Total Express, concatena o nome para não ficar só "Standard" na tela
         if (nomeEmpresaOriginal.toLowerCase().includes("total express")) {
           nomeExibicao = `Total Express - ${s.name}`;
         }
-
         return {
           id: s.id,
           nome: nomeExibicao,
@@ -452,36 +434,36 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
       if (paymentDetails.status === "approved") {
         const uid = paymentDetails.external_reference;
         const paymentId = String(paymentDetails.id);
+
+        const webhookMarkerRef = db.collection("mp_payment_processed").doc(paymentId);
+        const isFirstTime = await db.runTransaction(async (tx) => {
+          const snap = await tx.get(webhookMarkerRef);
+          if (snap.exists && snap.get("processedForBling")) return false;
+          tx.set(webhookMarkerRef, { processedForBling: true }, {merge: true});
+          return true;
+        });
+
+        if (!isFirstTime) {
+          logger.info(`[Webhook] Pagamento ${paymentId} já processado. Ignorando duplicata.`);
+          return res.status(200).send("OK");
+        }
+
         logger.info("[Webhook] Pagamento aprovado.", {
-          uid,
-          paymentId,
-          externalReference: uid,
+          uid, paymentId, externalReference: uid,
           paymentMethod: paymentDetails?.payment_method_id,
           paymentType: paymentDetails?.payment_type_id,
         });
 
-        // Busca explícita do rascunho pelo external_reference (ID do draft)
         let draftData = null;
         if (uid) {
           try {
             const draftSnap = await db.collection("orders_draft").doc(String(uid)).get();
             draftData = draftSnap.exists ? (draftSnap.data() || {}) : null;
-            if (!draftData) {
-              logger.warn("[Webhook] orders_draft não encontrado para uid.", {uid, paymentId});
-            } else {
-              logger.info("[Webhook] orders_draft encontrado.", {uid, paymentId});
-            }
           } catch (err) {
-            logger.warn("[Webhook] Falha ao buscar orders_draft por external_reference.", {
-              uid: String(uid),
-              paymentId,
-              detalhes: err?.message || String(err),
-            });
+            logger.warn("[Webhook] Falha ao buscar orders_draft.", { uid: String(uid) });
           }
         }
 
-        // ATUALIZAÇÃO EXPLÍCITA: persiste approved no draft ANTES de qualquer outra operação.
-        // Isso permite que o front consulte o status via endpoint de polling.
         if (uid) {
           try {
             await db.collection("orders_draft").doc(String(uid)).set({
@@ -492,41 +474,20 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
               approvedAt: admin.firestore.FieldValue.serverTimestamp(),
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             }, {merge: true});
-            logger.info("[Webhook] orders_draft marcado como approved explicitamente.", {uid, paymentId});
-          } catch (errDraft) {
-            logger.error("[Webhook] Falha ao marcar orders_draft como approved.", {
-              uid,
-              paymentId,
-              detalhes: errDraft?.message || String(errDraft),
-            });
-          }
+          } catch (errDraft) {}
         }
 
-        // Prioridade MÁXIMA para o rascunho do site. O MP vira o fallback.
-        const emailCru = draftData?.email || 
-        draftData?.cliente?.email || 
-        paymentDetails?.payer?.email || 
-        paymentDetails?.additional_info?.payer?.email || 
-        "";
-
+        const emailCru = draftData?.email || draftData?.cliente?.email || paymentDetails?.payer?.email || paymentDetails?.additional_info?.payer?.email || "";
         const payerEmail = String(emailCru).trim();
-
         const items = paymentDetails?.additional_info?.items || [];
         const total = paymentDetails?.transaction_amount ?? 0;
 
-        // Finaliza no Firestore e tenta recuperar e-mail do draft se payerEmail for nulo
         const finalized = await finalizeOrderInFirestore({
-          paymentId,
-          userId: uid || "guest",
-          paymentDetails,
-          paymentItems: items,
-          paymentTotal: total,
-          payerEmail,
+          paymentId, userId: uid || "guest", paymentDetails, paymentItems: items, paymentTotal: total, payerEmail,
         });
 
         const emailFinal = String(payerEmail || finalized?.email || "").trim() || null;
 
-        // Só tenta enviar e-mail se existir um destinatário
         if (emailFinal && emailFinal.includes('@')) {
           try {
             const markerRef = db.collection("mp_payment_processed").doc(paymentId);
@@ -539,10 +500,7 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
 
             if (shouldSendEmail) {
               await sendOrderConfirmationEmail({
-                email: emailFinal,
-                orderNumber: paymentId,
-                items,
-                total,
+                email: emailFinal, orderNumber: paymentId, items, total,
                 trackingUrl: "https://hyggegames.com.br/perfil",
               });
               await markerRef.set({ orderEmailState: "sent" }, {merge: true});
@@ -550,11 +508,8 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
           } catch (e) {
             logger.error("Erro ao processar fila de e-mail:", e.message);
           }
-        } else {
-          logger.warn(`Pagamento ${paymentId} aprovado, mas nenhum e-mail encontrado para envio.`);
         }
 
-        // SEMPRE tenta enviar para o Bling, mesmo se o e-mail falhar
         await enviarParaBling(paymentDetails);
       }
     }
@@ -566,27 +521,101 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
 });
 
 /**
+ * Gera NF-e vinculada ao pedido de venda e envia para a Sefaz
+ * 1. POST /pedidos/vendas/{idPedidoVenda}/gerar-nfe  → cria a NF vinculada
+ * 2. POST /nfe/{idNotaFiscal}/enviar                 → envia para a Sefaz
+ */
+async function gerarNotaFiscalBling(idDoPedidoBling) {
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  try {
+    const token = await obterTokenBling();
+    const headers = {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+
+    // 1. Gera a NF vinculada ao pedido
+    const urlGerar = `https://www.bling.com.br/Api/v3/pedidos/vendas/${idDoPedidoBling}/gerar-nfe`;
+    logger.info(`Gerando NF-e para pedido ${idDoPedidoBling} via ${urlGerar}`);
+
+    const nfResp = await axios.post(urlGerar, {}, { headers });
+
+    // Log completo da resposta para identificar a estrutura
+    logger.info(`Resposta gerar-nfe:`, JSON.stringify(nfResp.data));
+
+    // Tenta extrair o ID da NF de vários caminhos possíveis
+    const idNF = nfResp.data?.data?.id
+      || nfResp.data?.data?.idNotaFiscal
+      || nfResp.data?.data?.nfe?.id
+      || (Array.isArray(nfResp.data?.data) && nfResp.data.data[0]?.id)
+      || nfResp.data?.id;
+
+    if (!idNF) {
+      logger.warn("ID da NF não encontrado na resposta. Tentando buscar NF pelo pedido...");
+
+      // Fallback: busca a NF mais recente vinculada ao pedido
+      await sleep(2000);
+      const pedidoResp = await axios.get(
+        `https://www.bling.com.br/Api/v3/pedidos/vendas/${idDoPedidoBling}`,
+        { headers }
+      );
+      logger.info(`Dados do pedido:`, JSON.stringify(pedidoResp.data?.data?.notaFiscal || pedidoResp.data?.data?.nfe || "nenhuma NF encontrada"));
+
+      const idNFFallback = pedidoResp.data?.data?.notaFiscal?.id
+        || pedidoResp.data?.data?.nfe?.id
+        || null;
+
+      if (!idNFFallback) {
+        throw new Error("NF gerada mas não foi possível obter o ID para enviar à Sefaz.");
+      }
+
+      logger.info(`✅ NF ${idNFFallback} encontrada via GET pedido. Enviando para a Sefaz...`);
+      await sleep(1000);
+      const urlEnviar = `https://www.bling.com.br/Api/v3/nfe/${idNFFallback}/enviar`;
+      await axios.post(urlEnviar, {}, { headers });
+      logger.info(`✅ NF ${idNFFallback} enviada para a Sefaz com sucesso!`);
+      return idNFFallback;
+    }
+
+    logger.info(`✅ NF ${idNF} gerada e vinculada ao pedido ${idDoPedidoBling}`);
+
+    // 2. Aguarda o Bling processar a NF antes de enviar
+    await sleep(2000);
+
+    // 3. Envia a NF para a Sefaz
+    const urlEnviar = `https://www.bling.com.br/Api/v3/nfe/${idNF}/enviar`;
+    logger.info(`Enviando NF ${idNF} para a Sefaz via ${urlEnviar}`);
+
+    await axios.post(urlEnviar, {}, { headers });
+    logger.info(`✅ NF ${idNF} enviada para a Sefaz com sucesso!`);
+
+    return idNF;
+
+  } catch (error) {
+    logger.error(
+      `Falha ao gerar/enviar NF para pedido ${idDoPedidoBling}:`,
+      error.response?.data || error.message
+    );
+    throw error;
+  }
+}
+
+/**
  * 4a. Bling OAuth2 — Gerenciador de Tokens (auto-refresh)
  */
 async function obterTokenBling() {
   const tokenDoc = db.collection("configuracoes").doc("bling_tokens");
   const snap = await tokenDoc.get();
 
-  if (!snap.exists) {
-    throw new Error("Tokens do Bling não encontrados.");
-  }
+  if (!snap.exists) throw new Error("Tokens do Bling não encontrados.");
 
   const dados = snap.data();
   const agora = Date.now();
   const expiraEm = dados.expires_at?.toMillis?.() ?? dados.expires_at ?? 0;
 
-  if (dados.access_token && agora < expiraEm - 60000) {
-    return dados.access_token;
-  }
-
-  if (!dados.refresh_token) {
-    throw new Error("Refresh token do Bling ausente.");
-  }
+  if (dados.access_token && agora < expiraEm - 60000) return dados.access_token;
+  if (!dados.refresh_token) throw new Error("Refresh token do Bling ausente.");
 
   const credentials = Buffer.from(
     `${blingClientId.value()}:${blingClientSecret.value()}`,
@@ -599,12 +628,7 @@ async function obterTokenBling() {
   const resp = await axios.post(
     "https://www.bling.com.br/Api/v3/oauth/token",
     params.toString(),
-    {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Authorization": `Basic ${credentials}`,
-      },
-    },
+    { headers: { "Content-Type": "application/x-www-form-urlencoded", "Authorization": `Basic ${credentials}` } },
   );
 
   const novosDados = resp.data;
@@ -622,7 +646,7 @@ async function obterTokenBling() {
 }
 
 /**
- * 4b. Bling OAuth2 — Callback (troca code por tokens)
+ * 4b. Bling OAuth2 — Callback
  */
 exports.callbackBling = onRequest({cors: true}, async (req, res) => {
   try {
@@ -640,12 +664,7 @@ exports.callbackBling = onRequest({cors: true}, async (req, res) => {
     const resp = await axios.post(
       "https://www.bling.com.br/Api/v3/oauth/token",
       params.toString(),
-      {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "Authorization": `Basic ${credentials}`,
-        },
-      },
+      { headers: { "Content-Type": "application/x-www-form-urlencoded", "Authorization": `Basic ${credentials}` } },
     );
 
     const dados = resp.data;
@@ -678,7 +697,6 @@ async function enviarParaBling(dadosPagamento) {
       "Content-Type": "application/json",
     };
 
-    // 1. Pega dados do rascunho
     const uid = String(dadosPagamento?.external_reference || "").trim();
     let draftData = {};
     if (uid) {
@@ -686,11 +704,16 @@ async function enviarParaBling(dadosPagamento) {
         const draftDoc = await db.collection("orders_draft").doc(uid).get();
         draftData = draftDoc.exists ? (draftDoc.data() || {}) : {};
       } catch (e) {
-        logger.warn("Não foi possível ler orders_draft para o Bling.", {uid, detalhes: e?.message || String(e)});
+        logger.warn("Não foi possível ler orders_draft para o Bling.");
       }
     }
 
-    // 2. Define variáveis de busca
+    const mapaPagamentos = {
+      'pix': 3416203, 'credit_card': 3416237, 'bolbradesco': 3359455, 'pec': 3416203
+    };
+    const mpMetodo = dadosPagamento.payment_method_id; 
+    const idFormaBling = mapaPagamentos[mpMetodo] || 3416203;
+
     const emailContato = String(draftData?.email || draftData?.cliente?.email || dadosPagamento?.payer?.email || "").trim();
     const cpfOriginal = draftData?.cpf || dadosPagamento?.payer?.identification?.number || "";
     const cpfLimpo = String(cpfOriginal).replace(/\D/g, "").trim();
@@ -700,56 +723,32 @@ async function enviarParaBling(dadosPagamento) {
 
     let idDoContato = null;
 
-    // 2a. Tenta localizar primeiro por E-MAIL
     if (emailContato) {
       try {
-        const buscaEmail = await axios.get(
-          `https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(emailContato)}`,
-          {headers},
-        );
-        if (buscaEmail.data?.data?.length > 0) {
-          idDoContato = buscaEmail.data.data[0].id;
-        }
-      } catch (e) {
-        logger.warn("Busca por e-mail falhou no Bling.", {detalhes: e?.response?.data || e?.message});
-      }
+        const buscaEmail = await axios.get(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(emailContato)}`, {headers});
+        if (buscaEmail.data?.data?.length > 0) idDoContato = buscaEmail.data.data[0].id;
+      } catch (e) {}
       await sleep(400);
     }
 
-    // 2b. Se não achou por e-mail e tem CPF
     if (!idDoContato && cpfLimpo) {
       try {
-        const buscaDoc = await axios.get(
-          `https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${encodeURIComponent(cpfLimpo)}`,
-          {headers},
-        );
+        const buscaDoc = await axios.get(`https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${encodeURIComponent(cpfLimpo)}`, {headers});
         await sleep(400);
-
         let lista = Array.isArray(buscaDoc.data?.data) ? buscaDoc.data.data : [];
         if (lista.length === 0) {
-          const buscaGeral = await axios.get(
-            "https://www.bling.com.br/Api/v3/contatos?criterio=1",
-            {headers},
-          );
+          const buscaGeral = await axios.get("https://www.bling.com.br/Api/v3/contatos?criterio=1", {headers});
           await sleep(400);
           const geral = Array.isArray(buscaGeral.data?.data) ? buscaGeral.data.data : [];
           lista = geral.filter((c) => String(c?.numeroDocumento || "").replace(/\D/g, "") === cpfLimpo);
         }
-
-        if (lista.length > 0) {
-          idDoContato = lista[0].id;
-        }
-      } catch (e) {
-        logger.warn("Busca por CPF falhou no Bling.", {detalhes: e?.response?.data || e?.message});
-      }
+        if (lista.length > 0) idDoContato = lista[0].id;
+      } catch (e) {}
     }
 
-    // 3. Se ainda não tem ID, cria um novo contato COM ENDEREÇO
     if (!idDoContato) {
       const payloadContato = {
-        nome: nomeCompleto,
-        tipo: "F",
-        situacao: "A",
+        nome: nomeCompleto, tipo: "F", situacao: "A",
         endereco: {
           geral: {
             endereco: addrDraft?.endereco || "Endereço não informado",
@@ -773,9 +772,23 @@ async function enviarParaBling(dadosPagamento) {
       await sleep(400);
     }
 
+    // Garante que o contato existente tenha CPF (necessário para NF)
+    if (idDoContato && cpfLimpo) {
+      try {
+        await axios.put(
+          `https://www.bling.com.br/Api/v3/contatos/${idDoContato}`,
+          { numeroDocumento: cpfLimpo },
+          { headers }
+        );
+        logger.info("CPF atualizado no contato Bling.", { idDoContato, cpfLimpo });
+      } catch (e) {
+        logger.warn("Não foi possível atualizar CPF do contato no Bling.", { idDoContato, cpfLimpo });
+      }
+      await sleep(400);
+    }
+
     await sleep(800);
 
-    // 4. Mapear itens e endereço
     const produtosSnap = await db.collection("products").get();
     const produtosMap = {};
     const produtosPorNome = {};
@@ -801,13 +814,9 @@ async function enviarParaBling(dadosPagamento) {
 
       try {
         const buscaProd = await axios.get(`https://www.bling.com.br/Api/v3/produtos?codigo=${encodeURIComponent(skuReal)}`, {headers});
-        if (buscaProd.data?.data?.length > 0) {
-          idInternoBling = buscaProd.data.data[0].id;
-        }
+        if (buscaProd.data?.data?.length > 0) idInternoBling = buscaProd.data.data[0].id;
         await sleep(350); 
-      } catch (errProd) {
-        logger.warn("Aviso: Produto não encontrado na busca prévia do Bling", {skuReal});
-      }
+      } catch (errProd) {}
 
       const objItem = {
         codigo: String(skuReal),
@@ -817,48 +826,57 @@ async function enviarParaBling(dadosPagamento) {
         unidade: "UN"
       };
 
-      if (idInternoBling) {
-        objItem.produto = { id: idInternoBling };
-      }
-
+      if (idInternoBling) objItem.produto = { id: idInternoBling };
       itensMapeados.push(objItem);
     }
 
     const hoje = new Date().toISOString().split("T")[0];
     const addrPay = dadosPagamento.additional_info?.shipment?.receiver_address || {};
+    const nomeDoFrete = String(draftData?.metodoEntrega || draftData?.dadosEntrega?.metodoEntrega || draftData?.freteMetodo || "Transportadora");
 
     const pedidoBling = {
       contato: { id: idDoContato },
+      loja: { id: 205984154 }, 
+      situacao: { id: 9 },
       data: hoje,
       itens: itensMapeados,
       transporte: {
         fretePorConta: 0, 
         frete: Number(draftData?.frete ?? 0),
-        quantidadeVolumes: 1, // <-- Adicionado para garantir que o Bling processe o volume
-        contato: {
-          nome: String(draftData?.metodoEntrega || draftData?.freteMetodo || "Transportadora")
-        },
-        // AQUI ESTÁ A CORREÇÃO: Buscando do lugar exato do seu banco de dados
-        volumes: [
-          {
-            servico: String(draftData?.dadosEntrega?.metodoEntregaId || draftData?.freteOpcaoId || "")
-          }
-        ],
+        quantidadeVolumes: 1, 
+        contato: { nome: nomeDoFrete },
+        volumes: [{ servico: nomeDoFrete }],
         endereco: addrDraft?.endereco || addrPay?.street_name || "",
         numero: String(addrDraft?.numero || addrPay?.street_number || ""),
         cep: addrDraft?.cep || addrPay?.zip_code || "",
         cidade: addrDraft?.cidade || addrPay?.city_name || "",
         uf: addrDraft?.estado || addrPay?.state_name || ""
       },
+      parcelas: [{
+        dataVencimento: hoje,
+        valor: Number(dadosPagamento.transaction_amount || draftData?.total || 0),
+        formaPagamento: { id: idFormaBling } 
+      }],
       observacoes: `Site Hygge - MP ID: ${dadosPagamento.id}`
     };
 
-    await axios.post("https://www.bling.com.br/Api/v3/pedidos/vendas", pedidoBling, { headers });
-    logger.info("Venda registrada no Bling.");
+    logger.info("Payload enviado ao Bling:", JSON.stringify(pedidoBling));
 
-  // O ERRO ESTAVA AQUI: As chaves abaixo tinham sido apagadas!
+    const vendaResp = await axios.post("https://www.bling.com.br/Api/v3/pedidos/vendas", pedidoBling, { headers });
+    const idPedidoBling = vendaResp.data?.data?.id;
+    logger.info(`✅ Venda ${idPedidoBling} criada como "Em aberto".`);
+
+    await sleep(2000);
+    
+    try {
+      await gerarNotaFiscalBling(idPedidoBling);
+      logger.info(`✅ Fluxo completo: Pedido ${idPedidoBling} criado e NF gerada com sucesso!`);
+    } catch (nfError) {
+      logger.error(`⚠️ Pedido ${idPedidoBling} criado, mas falhou ao gerar NF:`, nfError.response?.data || nfError.message);
+    }
+
   } catch (err) {
-    logger.error("Falha Bling:", err.response?.data || err.message);
+    logger.error("Falha Bling. Payload error:", err.response?.data || err.message);
   }
 }
 
@@ -870,42 +888,25 @@ exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => 
   res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.set("Access-Control-Allow-Headers", "Content-Type");
 
-  if (req.method === "OPTIONS") {
-    res.status(204).send("");
-    return;
-  }
-
-  if (req.method !== "POST") {
-    res.status(405).send("Método não permitido");
-    return;
-  }
+  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+  if (req.method !== "POST") { res.status(405).send("Método não permitido"); return; }
 
   try {
     const {email} = req.body || {};
-    if (!email) {
-      res.status(400).json({error: "E-mail é obrigatório"});
-      return;
-    }
+    if (!email) { res.status(400).json({error: "E-mail é obrigatório"}); return; }
 
     let link;
     try {
-      const actionCodeSettings = {
-        url: "https://hyggegames.com.br/reset-password",
-        handleCodeInApp: true,
-      };
-      link = await admin.auth().generatePasswordResetLink(email, actionCodeSettings);
-    } catch (err) {
-      res.status(200).json({ok: true});
-      return;
-    }
+      link = await admin.auth().generatePasswordResetLink(email, {
+        url: "https://hyggegames.com.br/reset-password", handleCodeInApp: true,
+      });
+    } catch (err) { res.status(200).json({ok: true}); return; }
 
     let resetLink = "https://hyggegames.com.br/reset-password";
     try {
       const urlObj = new URL(link);
       const oobCode = urlObj.searchParams.get("oobCode");
-      if (oobCode) {
-        resetLink = `${resetLink}?oobCode=${encodeURIComponent(oobCode)}`;
-      }
+      if (oobCode) resetLink = `${resetLink}?oobCode=${encodeURIComponent(oobCode)}`;
     } catch (err) { }
 
     const html = generateEmailTemplate({
@@ -918,10 +919,7 @@ exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => 
 
     await db.collection("mail").add({
       to: email,
-      message: {
-        subject: "Redefinir senha - Hygge Games",
-        html,
-      },
+      message: { subject: "Redefinir senha - Hygge Games", html },
     });
 
     res.status(200).json({ok: true});
@@ -930,128 +928,80 @@ exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => 
   }
 });
 
-
-
 /**
- * 6. FUNÇÃO: Consultar Status do Pedido (polling do front)
- * Usada pela página /pendente para detectar aprovação Pix e redirecionar para /obrigado.
+ * 6. FUNÇÃO: Consultar Status do Pedido
  */
 exports.consultarStatusPedido = onRequest({cors: true}, async (req, res) => {
   try {
-    const externalReference =
-      req.query.external_reference ||
-      req.body?.external_reference ||
-      null;
-    const paymentId =
-      req.query.payment_id ||
-      req.body?.payment_id ||
-      null;
-
-    logger.info("[consultarStatusPedido] Consulta recebida.", {externalReference, paymentId});
+    const externalReference = req.query.external_reference || req.body?.external_reference || null;
+    const paymentId = req.query.payment_id || req.body?.payment_id || null;
 
     if (!externalReference && !paymentId) {
       return res.status(400).json({error: "Informe external_reference ou payment_id."});
     }
 
-    // Camada 1: buscar em `orders` pelo payment_id (pedido já finalizado)
     if (paymentId) {
       try {
         const orderSnap = await db.collection("orders").doc(String(paymentId)).get();
         if (orderSnap.exists) {
           const d = orderSnap.data() || {};
-          logger.info("[consultarStatusPedido] Encontrado em orders.", {paymentId});
           return res.json({
-            found: true,
-            source: "orders",
-            orderId: orderSnap.id,
+            found: true, source: "orders", orderId: orderSnap.id,
             paymentId: d.mercadopago_id || paymentId,
             externalReference: d.external_reference || externalReference,
-            status: d.status_pagamento || "approved",
-            approved: true,
+            status: d.status_pagamento || "approved", approved: true,
             total: d.valor_total ?? d.valores?.total ?? null,
-            itens: d.itens || null,
-            cliente: d.cliente || null,
+            itens: d.itens || null, cliente: d.cliente || null,
           });
         }
-      } catch (e) {
-        logger.warn("[consultarStatusPedido] Falha ao buscar em orders.", {paymentId, detalhes: e?.message});
-      }
+      } catch (e) {}
     }
 
-    // Camada 2: buscar em `orders_draft` pelo external_reference (doc ID = userId)
     if (externalReference) {
       try {
         const draftSnap = await db.collection("orders_draft").doc(String(externalReference)).get();
         if (draftSnap.exists) {
           const d = draftSnap.data() || {};
           const approved = d.status_pagamento === "approved";
-          logger.info("[consultarStatusPedido] Encontrado em orders_draft por external_reference.", {externalReference, approved});
           return res.json({
-            found: true,
-            source: "orders_draft",
-            orderId: draftSnap.id,
+            found: true, source: "orders_draft", orderId: draftSnap.id,
             paymentId: d.mercadopago_id || d.payment_id || paymentId,
-            externalReference: externalReference,
-            status: d.status_pagamento || "pending",
-            approved,
-            total: d.total ?? null,
-            itens: d.produtos || null,
+            externalReference, status: d.status_pagamento || "pending", approved,
+            total: d.total ?? null, itens: d.produtos || null,
             cliente: d.cliente || {nome: d.nome || null, email: d.email || null},
           });
         }
-      } catch (e) {
-        logger.warn("[consultarStatusPedido] Falha ao buscar em orders_draft por external_reference.", {externalReference, detalhes: e?.message});
-      }
+      } catch (e) {}
     }
 
-    // Camada 3: buscar em `orders_draft` pelo campo mercadopago_id / payment_id
     if (paymentId) {
       try {
-        const draftByMpSnap = await db
-          .collection("orders_draft")
-          .where("mercadopago_id", "==", String(paymentId))
-          .limit(1)
-          .get();
+        const draftByMpSnap = await db.collection("orders_draft")
+          .where("mercadopago_id", "==", String(paymentId)).limit(1).get();
         if (!draftByMpSnap.empty) {
           const doc = draftByMpSnap.docs[0];
           const d = doc.data() || {};
           const approved = d.status_pagamento === "approved";
-          logger.info("[consultarStatusPedido] Encontrado em orders_draft por mercadopago_id.", {paymentId, approved});
           return res.json({
-            found: true,
-            source: "orders_draft_by_payment_id",
-            orderId: doc.id,
-            paymentId: paymentId,
-            externalReference: d.external_reference || externalReference,
-            status: d.status_pagamento || "pending",
-            approved,
-            total: d.total ?? null,
-            itens: d.produtos || null,
+            found: true, source: "orders_draft_by_payment_id", orderId: doc.id,
+            paymentId, externalReference: d.external_reference || externalReference,
+            status: d.status_pagamento || "pending", approved,
+            total: d.total ?? null, itens: d.produtos || null,
             cliente: d.cliente || {nome: d.nome || null, email: d.email || null},
           });
         }
-      } catch (e) {
-        logger.warn("[consultarStatusPedido] Falha ao buscar em orders_draft por mercadopago_id.", {paymentId, detalhes: e?.message});
-      }
+      } catch (e) {}
     }
 
-    // Não encontrado
-    logger.info("[consultarStatusPedido] Pedido não encontrado.", {externalReference, paymentId});
     return res.json({
-      found: false,
-      source: null,
-      orderId: null,
-      paymentId: paymentId,
-      externalReference: externalReference,
-      status: "not_found",
-      approved: false,
+      found: false, source: null, orderId: null,
+      paymentId, externalReference, status: "not_found", approved: false,
     });
   } catch (error) {
-    logger.error("[consultarStatusPedido] Erro ao consultar status:", error);
+    logger.error("[consultarStatusPedido] Erro:", error);
     res.status(500).json({error: "Erro interno ao consultar status do pedido"});
   }
 });
-
 
 // firebase deploy --only functions
 
