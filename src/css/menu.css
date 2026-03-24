@@ -54,6 +54,8 @@ body.menu-open .menu-btn {
   display: flex;
   flex-direction: column;
   padding: 32px 24px 24px 24px;
+  overflow-y: auto; /* sidebar scrollável se o conteúdo for longo */
+  overscroll-behavior: contain; /* impede que o scroll do menu role a página */
 }
 .menu-sidebar.active {
   transform: translateX(0);
@@ -103,6 +105,8 @@ body.menu-open .menu-btn {
 
 body.menu-open {
   overflow: hidden;
+  /* Fixa a página sem causar salto de layout (mantém espaço da scrollbar) */
+  overscroll-behavior: none;
 }
 
 /* Responsividade para mobile */

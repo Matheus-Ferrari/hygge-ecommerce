@@ -11,12 +11,8 @@ body.product-page {
   padding-bottom: 0 !important;
 }
 
-/* Sticky footer (carrinho/checkout): garante que o rodapé seja o último
-   elemento visível, sem "vazio" abaixo quando a página é curta. */
-html,
-body {
-  height: 100%;
-}
+/* Sticky footer (carrinho/checkout): o min-height: 100vh abaixo já garante
+   que a p\u00e1gina ocupa pelo menos a altura total da janela. */
 
 body.product-page {
   min-height: 100vh;

@@ -434,6 +434,8 @@ html {
   box-sizing: border-box;
   font-size: 16px;
   scroll-behavior: smooth;
+  /* overflow-x no html aplica ao viewport, sem criar container de scroll duplo */
+  overflow-x: hidden;
 }
 *, *:before, *:after {
   box-sizing: inherit;
@@ -441,10 +443,9 @@ html {
 body {
   margin: 0 !important;
   padding: 0 !important;
-  width: 100vw !important;
-  min-width: 100vw !important;
+  width: 100% !important;
   box-sizing: border-box;
-  overflow-x: hidden !important;
+  /* NÃO usar overflow-x: hidden no body — criaria um segundo scrollbar vertical */
 }
 
 .sr-only {
@@ -543,8 +544,8 @@ body {
 
 /* HERO */
 .hero {
-  width: 100vw;
-  height: 80vh;
+  width: 100%;
+  height: clamp(420px, 80vh, 90vh);
   position: relative;
   background-image: url('../img/Banner1.png');
   background-repeat: no-repeat;
@@ -553,6 +554,8 @@ body {
   margin-top: 0;
   display: block;
   overflow: hidden;
+  /* Permite rolar a página verticalmente mesmo quando o dedo está sobre o hero */
+  touch-action: pan-y;
 }
 .hero::before {
   content: '';
@@ -573,7 +576,7 @@ body {
   min-height: 60vh;
 }
 .produtos-wrapper {
-  max-width: 100vw;
+  max-width: 100%;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
@@ -593,13 +596,12 @@ body {
   grid-template-columns: repeat(4, 1fr);
   gap: clamp(0px, 1vw, 16px);
   width: 100%;
-  max-width: 100vw;
+  max-width: 100%;
   margin: 0 auto;
   padding: 0 clamp(8px, 2vw, 32px);
   min-height: 420px;
   justify-items: center;
   align-items: start;
-  overflow-x: hidden;
   box-sizing: border-box;
 }
 .produto-card {
@@ -890,6 +892,12 @@ body {
 
 /* Correções globais de imagens para mobile (sem afetar desktop) */
 @media (max-width: 768px) {
+  /* touch-action nos cards e hero: permite scroll vertical em tablets/mobile */
+  .produto-img-bg,
+  .produto-card {
+    touch-action: pan-y;
+  }
+
   .produto-img-bg {
     width: 100%;
     max-width: 360px;
@@ -920,6 +928,41 @@ body {
     object-fit: cover !important;
   }
 
+  /* Contato: título principal com font-size inline → responsivo */
+  main > section[style*="text-align:center"] h2 {
+    font-size: clamp(1.6rem, 7vw, 2.8rem) !important;
+    word-break: break-word;
+  }
+  main > section[style*="text-align:center"] p {
+    font-size: 1rem !important;
+    padding: 0 8px;
+  }
+
+  /* H2 com font-size inline (contato, todos-os-jogos, etc) */
+  h2[style*="font-size"] {
+    font-size: clamp(1.5rem, 7vw, 2.8rem) !important;
+    line-height: 1.3 !important;
+  }
+  p[style*="font-size:21px"],
+  p[style*="font-size: 21px"],
+  p[style*="font-size:19px"] {
+    font-size: 1rem !important;
+    line-height: 1.7 !important;
+  }
+
+  /* "Seja um revendedor" CTA banner */
+  section[style*="background:#FAE696"] h2,
+  section[style*="background:#FAE696"] h2[style] {
+    font-size: clamp(1.4rem, 6vw, 2.4rem) !important;
+  }
+  section[style*="background:#FAE696"] p {
+    font-size: 1rem !important;
+  }
+  section[style*="background:#FAE696"] a {
+    font-size: 1.1rem !important;
+    padding: 14px 32px !important;
+  }
+
   /* Blocos com tamanho fixo da página de contato */
   section[style*="width:1180px"] {
     width: 92vw !important;
@@ -944,6 +987,39 @@ body {
   .login-logo img {
     max-width: 100%;
     height: auto;
+  }
+}
+
+/* ── Contato: seções de largura fixa → fluidas entre tablet e notebook ── */
+@media (min-width: 769px) and (max-width: 1199px) {
+  section[style*="width:1180px"] {
+    width: 92vw !important;
+    height: auto !important;
+  }
+  section[style*="width:1180px"] > div[style*="width:590px"] {
+    width: 50% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 280px;
+    box-sizing: border-box;
+  }
+  section[style*="width:1180px"] img {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 280px;
+    object-fit: cover !important;
+  }
+}
+
+/* ── Hero: altura reduzida em viewports baixas (ex: notebooks 768px de altura) ── */
+@media (max-height: 800px) and (min-width: 769px) {
+  .hero {
+    height: clamp(380px, 68vh, 80vh);
+  }
+}
+@media (max-height: 680px) and (min-width: 769px) {
+  .hero {
+    height: clamp(340px, 60vh, 580px);
   }
 }
 
@@ -1035,6 +1111,20 @@ body {
     min-height: 300px;
     transform: none;
     object-fit: cover;
+  }
+}
+
+/* Notebook (1366px): limita a extrussão do bleed da imagem */
+@media (max-width: 1366px) and (min-width: 769px) {
+  .sobre-hygge-img-wrap {
+    flex: 0 0 400px;
+    width: 400px;
+    min-height: 400px;
+    margin-left: -60px;
+  }
+  .sobre-hygge-img {
+    min-height: 400px;
+    transform: translateX(-30px);
   }
 }
 
