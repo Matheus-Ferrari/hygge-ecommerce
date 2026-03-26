@@ -13,6 +13,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Criar conta | Hygge Games</title>
   <link rel="icon" href="/img/logopreta.png" type="image/png" sizes="any">
+  <script>
+    if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js').catch(function(){}); }
+    (function() {
+      try {
+        var c = JSON.parse(localStorage.getItem('hygge_assets_v1') || 'null');
+        if (!c) return;
+        var m = window.innerWidth <= 768, p = location.pathname;
+        var u = (p.indexOf('/login') === 0 || p.indexOf('/cadastro') === 0)
+          ? (m ? c.bannerLoginMobile || c.bannerLogin : c.bannerLogin || c.bannerLoginMobile)
+          : null;
+        if (u && u.indexOf('http') === 0) {
+          var l = document.createElement('link');
+          l.rel = 'preload'; l.as = 'image'; l.href = u;
+          document.head.appendChild(l);
+        }
+      } catch(e) {}
+    })();
+  </script>
   <link rel="stylesheet" href="src/css/style.css">
   <link rel="stylesheet" href="src/css/footer.css">
   <style>
@@ -125,6 +143,21 @@
       border-radius: 10px;
       padding: 10px 16px;
     }
+    /* Telas intermediárias: notebooks (altura ≤ 900px, largura > 640px) */
+    @media (min-width: 641px) and (max-height: 900px) {
+      .register-container {
+        padding-top: 16px !important;
+        padding-bottom: 16px !important;
+        padding-left: 28px !important;
+        padding-right: 28px !important;
+        max-height: calc(100vh - 120px) !important;
+        max-width: 600px !important;
+      }
+      .register-container-wrapper {
+        top: calc(50% - 220px) !important;
+      }
+    }
+
     @media (max-width: 640px) {
       /* Body cresce com o conteúdo no mobile */
       body {
@@ -179,6 +212,7 @@
       }
     }
   </style>
+  <script src="/preloader.js"></script>
 </head>
 <body>
   <h1 class="sr-only">Cadastro - Hygge Games</h1>
