@@ -1,7 +1,13 @@
 (function () {
-  var MIN_MS   = 700;  // tempo mínimo visível (ms)
+  var MIN_MS   = 1600;  // tempo mínimo visível (ms)
   var FADE_MS  = 700;   // duração do fade-out (ms)
   var MAX_MS   = 8000;  // fallback máximo (ms)
+
+  // ── Esconde o HTML imediatamente (síncrono, ainda no <head>) ──────────────
+  // Isso elimina o flash de conteúdo antes do overlay aparecer.
+  var docEl = document.documentElement;
+  docEl.style.background = '#003028';
+  docEl.style.visibility = 'hidden';
 
   var style = document.createElement('style');
   style.textContent = [
@@ -29,7 +35,7 @@
   el.id = 'hygge-pl';
   el.innerHTML = '<img src="/img/logo.png" alt="Hygge Games">';
 
-  var dismissed  = false;
+  var dismissed   = false;
   var readyToHide = false;  // assets aplicados
   var minExpired  = false;  // tempo mínimo decorrido
 
@@ -52,11 +58,15 @@
   // Fallback absoluto
   setTimeout(function () {
     if (!dismissed) { dismissed = true; el.classList.add('out'); }
+    docEl.style.visibility = '';
   }, MAX_MS);
 
   function inject() {
     var body = document.body || document.documentElement;
     body.insertBefore(el, body.firstChild);
+    // Revela o HTML assim que o overlay está no DOM — sem flash
+    if (typeof window.__plShow === 'function') window.__plShow();
+    docEl.style.visibility = '';
   }
   if (document.body) { inject(); }
   else { document.addEventListener('DOMContentLoaded', inject); }
