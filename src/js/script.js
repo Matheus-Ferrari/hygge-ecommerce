@@ -142,15 +142,46 @@ function applyAssetsToDOM(resolved, isMobile, lqip = {}) {
   applyImageSrc(document.getElementById('icone-producao'), resolved.pngsobrehygge3);
 }
 
+// Retorna a URL do banner hero relevante para a página atual
+function getHeroBannerUrl(resolved, isMobile) {
+  const p = location.pathname;
+  if (p === '/' || p.indexOf('/produto') === 0 || p.indexOf('/todos') === 0)
+    return isMobile ? (resolved.bannerHomeMobile || resolved.bannerHome) : (resolved.bannerHome || resolved.bannerHomeMobile);
+  if (p.indexOf('/contato') === 0)
+    return isMobile ? (resolved.bannerContatoMobile || resolved.bannerContato) : (resolved.bannerContato || resolved.bannerContatoMobile);
+  if (p.indexOf('/login') === 0 || p.indexOf('/cadastro') === 0)
+    return isMobile ? (resolved.bannerLoginMobile || resolved.bannerLogin) : (resolved.bannerLogin || resolved.bannerLoginMobile);
+  if (p.indexOf('/sobre') === 0)
+    return isMobile ? (resolved.bannerSobreHyggeMobile || resolved.bannerSobreHygge) : (resolved.bannerSobreHygge || resolved.bannerSobreHyggeMobile);
+  return null;
+}
+
+// Precarrega a imagem hero; resolve sempre (onload ou onerror) para não travar o preloader
+function preloadHeroBanner(url) {
+  return new Promise((resolve) => {
+    if (!url || url === TRANSPARENT_PIXEL || !url.startsWith('http')) { resolve(); return; }
+    const img = new Image();
+    img.onload  = resolve;
+    img.onerror = resolve;
+    img.src = url;
+  });
+}
+
 function applyCachedAssets() {
   try {
     const cached = JSON.parse(localStorage.getItem(ASSET_CACHE_KEY) || 'null');
     if (!cached) return;
-    const lqip = JSON.parse(localStorage.getItem(LQIP_CACHE_KEY) || '{}');
-    applyAssetsToDOM(cached, window.innerWidth <= 768, lqip);
-    // Cache existe: esconde o preloader assim que os assets forem aplicados
+    const lqip    = JSON.parse(localStorage.getItem(LQIP_CACHE_KEY) || '{}');
+    const isMobile = window.innerWidth <= 768;
+    applyAssetsToDOM(cached, isMobile, lqip);
+    // Aguarda o banner hero carregar antes de esconder o preloader
+    const heroUrl = getHeroBannerUrl(cached, isMobile);
+    preloadHeroBanner(heroUrl).then(() => {
+      if (typeof window.__hyggeHidePreloader === 'function') window.__hyggeHidePreloader();
+    });
+  } catch (e) {
     if (typeof window.__hyggeHidePreloader === 'function') window.__hyggeHidePreloader();
-  } catch (e) { /* ignore */ }
+  }
 }
 
 function applyHeaderScrollState() {
@@ -209,7 +240,8 @@ export async function loadAppAssets() {
     try { localStorage.setItem(ASSET_CACHE_TS, String(Date.now())); } catch (e) { /* ignore */ }
 
     applyAssetsToDOM(resolved, isMobile);
-    // Esconde o preloader após aplicar os assets (novo usuário sem cache)
+    // Aguarda o banner hero carregar antes de esconder o preloader (novo usuário sem cache)
+    await preloadHeroBanner(getHeroBannerUrl(resolved, isMobile));
     if (typeof window.__hyggeHidePreloader === 'function') window.__hyggeHidePreloader();
 
     // Gera thumbnails LQIP em background para o blur-up na próxima visita
