@@ -1,18 +1,66 @@
 const {onRequest} = require("firebase-functions/v2/https");
-const {defineString} = require("firebase-functions/params");
+const {defineSecret} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const crypto = require("crypto");
 const {MercadoPagoConfig, Preference, Payment} = require("mercadopago");
 const axios = require("axios");
 const {generateEmailTemplate} = require("./emailTemplates.cjs");
 
 /**
- * CONFIGURAÇÃO DE PARÂMETROS DE AMBIENTE
+ * SECRETS (Google Cloud Secret Manager)
+ * Para configurar no deploy: firebase functions:secrets:set NOME_DO_SECRET
+ * Para desenvolvimento local: crie hygge-backend/functions/.secret.local
  */
-const mpKeyParam = defineString("MP_KEY", {default: "TESTE"});
-const blingClientId = defineString("BLING_CLIENT_ID");
-const blingClientSecret = defineString("BLING_CLIENT_SECRET");
-const melhorEnvioToken = defineString("MELHOR_ENVIO_TOKEN", {default: "TESTE"});
+const mpKeyParam = defineSecret("MP_KEY");
+const blingClientId = defineSecret("BLING_CLIENT_ID");
+const blingClientSecret = defineSecret("BLING_CLIENT_SECRET");
+const melhorEnvioToken = defineSecret("MELHOR_ENVIO_TOKEN");
+const mpWebhookSecret = defineSecret("MP_WEBHOOK_SECRET");
+
+/**
+ * ORIGENS PERMITIDAS (CORS)
+ */
+const ALLOWED_ORIGINS = [
+  "https://hyggegames.com.br",
+  "https://e-commerce-hygge.web.app",
+  "https://e-commerce-hygge.firebaseapp.com",
+];
+
+/**
+ * Verifica a assinatura HMAC-SHA256 do webhook do Mercado Pago.
+ * Referência: https://www.mercadopago.com.br/developers/pt/docs/your-integrations/notifications/webhooks
+ */
+function verificarAssinaturaMP(req, secret) {
+  const xSignature = req.headers["x-signature"];
+  const xRequestId = req.headers["x-request-id"];
+
+  if (!xSignature || !xRequestId) return false;
+
+  const parts = {};
+  xSignature.split(",").forEach((pair) => {
+    const eqIdx = pair.indexOf("=");
+    if (eqIdx === -1) return;
+    parts[pair.slice(0, eqIdx).trim()] = pair.slice(eqIdx + 1).trim();
+  });
+
+  if (!parts.ts || !parts.v1) return false;
+
+  const dataId = req.body?.data?.id;
+  if (!dataId) return false;
+
+  const manifest = `id:${dataId};request-id:${xRequestId};ts:${parts.ts};`;
+  const expected = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
+
+  try {
+    const expectedBuf = Buffer.from(expected, "hex");
+    const receivedBuf = Buffer.from(parts.v1, "hex");
+    if (expectedBuf.length !== receivedBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, receivedBuf);
+  } catch {
+    return false;
+  }
+}
 
 // --- FUNÇÕES AUXILIARES DE FORMATAÇÃO E E-MAIL ---
 
@@ -262,14 +310,10 @@ async function finalizeOrderInFirestore({
 admin.initializeApp();
 const db = admin.firestore();
 
-const mpClient = new MercadoPagoConfig({
-  accessToken: mpKeyParam.value(),
-});
-
 /**
  * 1. FUNÇÃO: Criar Preferência (Checkout Mercado Pago)
  */
-exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
+exports.criarPreferencia = onRequest({cors: ALLOWED_ORIGINS, secrets: [mpKeyParam]}, async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).send("Método não permitido");
     return;
@@ -357,7 +401,7 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
 /**
  * 2. FUNÇÃO: Cálculo de Frete (MELHOR ENVIO)
  */
-exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
+exports.calcularFrete = onRequest({cors: ALLOWED_ORIGINS, secrets: [melhorEnvioToken]}, async (req, res) => {
   if (req.method !== "POST") return res.status(405).send("Método não permitido");
   
   try {
@@ -422,13 +466,22 @@ exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
 /**
  * 3. FUNÇÃO: Webhook de Notificação Mercado Pago
  */
-exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
+exports.notificacaoPagamento = onRequest(
+  {cors: true, secrets: [mpKeyParam, mpWebhookSecret, blingClientId, blingClientSecret]},
+  async (req, res) => {
   try {
+    const webhookSec = mpWebhookSecret.value();
+    if (webhookSec && !verificarAssinaturaMP(req, webhookSec)) {
+      logger.warn("[Webhook] Assinatura inválida rejeitada.", {ip: req.ip});
+      return res.status(403).send("Forbidden");
+    }
+
     const {action, data} = req.body;
     logger.info("[Webhook] Notificação recebida.", {action, paymentDataId: data?.id});
 
     if (action === "payment.created" || action === "payment.updated") {
-      const payment = new Payment(mpClient);
+      const clientMP = new MercadoPagoConfig({accessToken: mpKeyParam.value()});
+      const payment = new Payment(clientMP);
       const paymentDetails = await payment.get({id: data.id});
 
       if (paymentDetails.status === "approved") {
@@ -648,7 +701,7 @@ async function obterTokenBling() {
 /**
  * 4b. Bling OAuth2 — Callback
  */
-exports.callbackBling = onRequest({cors: true}, async (req, res) => {
+exports.callbackBling = onRequest({cors: true, secrets: [blingClientId, blingClientSecret]}, async (req, res) => {
   try {
     const code = req.query.code;
     if (!code) return res.status(400).send("Código ausente.");
@@ -883,12 +936,7 @@ async function enviarParaBling(dadosPagamento) {
 /**
  * 5. FUNÇÃO: Solicitar redefinição de senha
  */
-exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => {
-  res.set("Access-Control-Allow-Origin", "*");
-  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.set("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+exports.solicitarRedefinicaoSenha = onRequest({cors: ALLOWED_ORIGINS}, async (req, res) => {
   if (req.method !== "POST") { res.status(405).send("Método não permitido"); return; }
 
   try {
@@ -931,7 +979,7 @@ exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => 
 /**
  * 6. FUNÇÃO: Consultar Status do Pedido
  */
-exports.consultarStatusPedido = onRequest({cors: true}, async (req, res) => {
+exports.consultarStatusPedido = onRequest({cors: ALLOWED_ORIGINS}, async (req, res) => {
   try {
     const externalReference = req.query.external_reference || req.body?.external_reference || null;
     const paymentId = req.query.payment_id || req.body?.payment_id || null;
