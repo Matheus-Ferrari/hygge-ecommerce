@@ -164,21 +164,39 @@ function renderDeliveryOptions() {
 
   const selectedKey = freteSelecionadoKey;
 
-  container.innerHTML = freteOpcoes
-    .map((o, index) => {
-      const key = getFreteKey(o);
-      const checked = selectedKey ? key === selectedKey : index === 0;
-      const subtitle = o.prazo ? o.prazo : 'Prazo indisponível';
-      return `
-        <label class="delivery-card${checked ? ' delivery-card--selected' : ''}">
-          <input type="radio" name="delivery_method" value="${String(key).replace(/"/g, '&quot;')}" ${checked ? 'checked' : ''} />
-          <span class="delivery-card__title">${o.nome}</span>
-          <span class="delivery-card__price">${formatarPreco(o.valor)}</span>
-          <span class="delivery-card__subtitle">${subtitle}</span>
-        </label>
-      `.trim();
-    })
-    .join('');
+  container.textContent = '';
+  freteOpcoes.forEach((o, index) => {
+    const key = getFreteKey(o);
+    const checked = selectedKey ? key === selectedKey : index === 0;
+    const subtitle = o.prazo ? o.prazo : 'Prazo indisponível';
+
+    const label = document.createElement('label');
+    label.className = `delivery-card${checked ? ' delivery-card--selected' : ''}`;
+
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'delivery_method';
+    input.value = String(key);
+    if (checked) input.checked = true;
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'delivery-card__title';
+    titleSpan.textContent = o.nome;
+
+    const priceSpan = document.createElement('span');
+    priceSpan.className = 'delivery-card__price';
+    priceSpan.textContent = formatarPreco(o.valor);
+
+    const subtitleSpan = document.createElement('span');
+    subtitleSpan.className = 'delivery-card__subtitle';
+    subtitleSpan.textContent = subtitle;
+
+    label.appendChild(input);
+    label.appendChild(titleSpan);
+    label.appendChild(priceSpan);
+    label.appendChild(subtitleSpan);
+    container.appendChild(label);
+  });
 
   // Se nada estava selecionado, fixa a primeira opção.
   const first = freteOpcoes[0];
@@ -388,14 +406,24 @@ export function renderOrderSummary() {
   carrinhoAtual.forEach((item) => {
     const row = document.createElement('article');
     row.className = 'checkout-summary-item';
-    row.innerHTML = `
-      <img src="${item.imagem}" alt="${item.nome}" />
-      <div>
-        <h4>${item.nome}</h4>
-        <p>Quantidade: ${item.quantidade}</p>
-        <p>${formatarPreco(item.preco)}</p>
-      </div>
-    `;
+
+    const img = document.createElement('img');
+    img.src = item.imagem;
+    img.alt = item.nome;
+
+    const div = document.createElement('div');
+    const h4 = document.createElement('h4');
+    h4.textContent = item.nome;
+    const pQtd = document.createElement('p');
+    pQtd.textContent = `Quantidade: ${item.quantidade}`;
+    const pPreco = document.createElement('p');
+    pPreco.textContent = formatarPreco(item.preco);
+    div.appendChild(h4);
+    div.appendChild(pQtd);
+    div.appendChild(pPreco);
+
+    row.appendChild(img);
+    row.appendChild(div);
     itemsEl.appendChild(row);
   });
 
@@ -471,16 +499,32 @@ function renderCustomerReadonly(data) {
   const readonly = document.getElementById('customer-readonly');
   if (!readonly) return;
 
-  readonly.innerHTML = `
-    <div class="checkout-readonly__item"><p class="checkout-readonly__label">Nome</p><p class="checkout-readonly__value">${data.nome}</p></div>
-    <div class="checkout-readonly__item"><p class="checkout-readonly__label">Email</p><p class="checkout-readonly__value">${data.email}</p></div>
-    <div class="checkout-readonly__item"><p class="checkout-readonly__label">Telefone</p><p class="checkout-readonly__value">${data.telefone}</p></div>
-    <div class="checkout-readonly__item"><p class="checkout-readonly__label">CPF</p><p class="checkout-readonly__value">${data.cpf}</p></div>
-    <div class="checkout-readonly__item"><p class="checkout-readonly__label">CEP</p><p class="checkout-readonly__value">${data.cep}</p></div>
-    <div class="checkout-readonly__item checkout-readonly__item--full"><p class="checkout-readonly__label">Endereço</p><p class="checkout-readonly__value">${data.endereco}, ${data.numero}${data.complemento ? ` - ${data.complemento}` : ''}</p></div>
-    <div class="checkout-readonly__item"><p class="checkout-readonly__label">Cidade</p><p class="checkout-readonly__value">${data.cidade}</p></div>
-    <div class="checkout-readonly__item"><p class="checkout-readonly__label">Estado</p><p class="checkout-readonly__value">${data.estado}</p></div>
-  `;
+  readonly.textContent = '';
+
+  const fields = [
+    { label: 'Nome', value: data.nome },
+    { label: 'Email', value: data.email },
+    { label: 'Telefone', value: data.telefone },
+    { label: 'CPF', value: data.cpf },
+    { label: 'CEP', value: data.cep },
+    { label: 'Endereço', value: `${data.endereco}, ${data.numero}${data.complemento ? ` - ${data.complemento}` : ''}`, full: true },
+    { label: 'Cidade', value: data.cidade },
+    { label: 'Estado', value: data.estado },
+  ];
+
+  fields.forEach(({ label, value, full }) => {
+    const item = document.createElement('div');
+    item.className = `checkout-readonly__item${full ? ' checkout-readonly__item--full' : ''}`;
+    const labelEl = document.createElement('p');
+    labelEl.className = 'checkout-readonly__label';
+    labelEl.textContent = label;
+    const valueEl = document.createElement('p');
+    valueEl.className = 'checkout-readonly__value';
+    valueEl.textContent = value;
+    item.appendChild(labelEl);
+    item.appendChild(valueEl);
+    readonly.appendChild(item);
+  });
 }
 
 function mascararCpfCnpj(value) {
@@ -650,23 +694,29 @@ function renderCheckoutCouponState() {
   const desconto = getCupomDesconto();
   const isFreteGratis = cupomResultado?.valido && cupomResultado.tipo === 'frete_gratis';
   if (!cupomAplicado || (desconto <= 0 && !isFreteGratis)) {
-    stateEl.innerHTML = '';
+    stateEl.textContent = '';
     return;
   }
 
-  const label = isFreteGratis
+  const labelText = isFreteGratis
     ? 'Cupom aplicado: frete grátis!'
     : `Cupom aplicado: ${cupomAplicado}`;
 
-  stateEl.innerHTML = `
-    <div class="cart-coupon__applied">
-      <span>${label}</span>
-      <button id="checkout-coupon-remove" class="cart-coupon__remove" type="button">Remover</button>
-    </div>
-  `;
+  stateEl.textContent = '';
+  const wrapper = document.createElement('div');
+  wrapper.className = 'cart-coupon__applied';
+  const span = document.createElement('span');
+  span.textContent = labelText;
+  const removeBtn = document.createElement('button');
+  removeBtn.id = 'checkout-coupon-remove';
+  removeBtn.className = 'cart-coupon__remove';
+  removeBtn.type = 'button';
+  removeBtn.textContent = 'Remover';
+  wrapper.appendChild(span);
+  wrapper.appendChild(removeBtn);
+  stateEl.appendChild(wrapper);
 
-  const removeBtn = document.getElementById('checkout-coupon-remove');
-  removeBtn?.addEventListener('click', () => {
+  removeBtn.addEventListener('click', () => {
     cupomAplicado = null;
     cupomResultado = null;
     freteAtual = freteOriginal;

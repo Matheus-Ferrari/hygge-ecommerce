@@ -152,29 +152,70 @@
       const metodo    = String(order?.metodoEntrega || order?.freteMetodo || '').trim();
       const fmt       = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-      const itensHtml = itens.map((item) => {
+      summaryEl.textContent = '';
+
+      itens.forEach((item) => {
         const nome  = String(item?.nome || 'Produto');
-        const img   = String(item?.imagem || '/img/logopreta.png');
+        const imgSrc = String(item?.imagem || '/img/logopreta.png');
         const qtd   = Number(item?.quantidade ?? 1);
         const preco = Number(item?.preco ?? 0);
-        return `
-          <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #e2dcd6;">
-            <img src="${img}" alt="${nome}" style="width:52px;height:52px;object-fit:cover;border-radius:10px;flex-shrink:0;background:#ece7e0;" onerror="this.src='/img/logopreta.png'" />
-            <div style="flex:1;min-width:0;">
-              <p style="margin:0 0 3px 0;font-weight:600;font-size:0.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${nome}</p>
-              <p style="margin:0;color:#666;font-size:0.87rem;">Qtd: ${qtd} &nbsp;·&nbsp; ${fmt(preco)}</p>
-            </div>
-          </div>`;
-      }).join('');
 
-      summaryEl.innerHTML = `
-        ${itensHtml.length ? itensHtml : '<p style="margin:0;color:#888;">Nenhum item registrado.</p>'}
-        <div style="margin-top:12px;display:flex;flex-direction:column;gap:4px;">
-          <p style="margin:0;font-size:0.93rem;">Subtotal: <strong>${fmt(subtotal)}</strong></p>
-          <p style="margin:0;font-size:0.93rem;">Frete: <strong>${frete > 0 ? fmt(frete) : 'Grátis'}</strong></p>
-          ${metodo ? `<p style="margin:0;font-size:0.93rem;">Entrega: <strong>${metodo === 'retirada' ? 'Retirada' : metodo}</strong></p>` : ''}
-          <p style="margin:4px 0 0 0;font-size:1.03rem;border-top:1px solid #d9d3cc;padding-top:8px;">Total: <strong>${fmt(total)}</strong></p>
-        </div>`;
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #e2dcd6;';
+
+        const img = document.createElement('img');
+        img.src = imgSrc;
+        img.alt = nome;
+        img.style.cssText = 'width:52px;height:52px;object-fit:cover;border-radius:10px;flex-shrink:0;background:#ece7e0;';
+        img.onerror = function () { this.src = '/img/logopreta.png'; };
+
+        const info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;';
+
+        const pNome = document.createElement('p');
+        pNome.style.cssText = 'margin:0 0 3px 0;font-weight:600;font-size:0.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        pNome.textContent = nome;
+
+        const pDetail = document.createElement('p');
+        pDetail.style.cssText = 'margin:0;color:#666;font-size:0.87rem;';
+        pDetail.textContent = `Qtd: ${qtd}  ·  ${fmt(preco)}`;
+
+        info.appendChild(pNome);
+        info.appendChild(pDetail);
+        row.appendChild(img);
+        row.appendChild(info);
+        summaryEl.appendChild(row);
+      });
+
+      if (!itens.length) {
+        const empty = document.createElement('p');
+        empty.style.cssText = 'margin:0;color:#888;';
+        empty.textContent = 'Nenhum item registrado.';
+        summaryEl.appendChild(empty);
+      }
+
+      const totaisDiv = document.createElement('div');
+      totaisDiv.style.cssText = 'margin-top:12px;display:flex;flex-direction:column;gap:4px;';
+
+      const mkLine = (text, value, extra) => {
+        const p = document.createElement('p');
+        p.style.cssText = extra || 'margin:0;font-size:0.93rem;';
+        p.append(text + ' ');
+        const strong = document.createElement('strong');
+        strong.textContent = value;
+        p.appendChild(strong);
+        return p;
+      };
+
+      totaisDiv.appendChild(mkLine('Subtotal:', fmt(subtotal)));
+      totaisDiv.appendChild(mkLine('Frete:', frete > 0 ? fmt(frete) : 'Grátis'));
+
+      if (metodo) {
+        totaisDiv.appendChild(mkLine('Entrega:', metodo === 'retirada' ? 'Retirada' : metodo));
+      }
+
+      totaisDiv.appendChild(mkLine('Total:', fmt(total), 'margin:4px 0 0 0;font-size:1.03rem;border-top:1px solid #d9d3cc;padding-top:8px;'));
+      summaryEl.appendChild(totaisDiv);
     }
 
     // --- Atualizar UI de status ---
@@ -347,8 +388,3 @@
   <script type="module" src="src/js/script.js"></script>
 </body>
 </html>
-
-
-
-
-

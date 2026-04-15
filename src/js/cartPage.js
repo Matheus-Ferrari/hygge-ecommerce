@@ -1,5 +1,4 @@
-﻿
-import { obterCalculoFrete } from './checkoutService.js';
+﻿import { obterCalculoFrete } from './checkoutService.js';
 import { validarCupom, aplicarBeneficioCupom } from '../firebase/couponService.js';
 import { getProducts } from '../firebase/productService.js';
 
@@ -180,42 +179,76 @@ function criarItemCard(item) {
   const card = document.createElement('article');
   card.className = 'cart-item-card produto-card';
 
-  card.innerHTML = `
-    <div class="cart-item-card__imageWrap produto-img-bg">
-      <img src="${item.imagem}" alt="${item.nome}" class="produto-img cart-item-card__image" onerror="this.src='src/img/logo.png'; this.style.objectFit='contain';" />
-    </div>
+  // Image wrap
+  const imageWrap = document.createElement('div');
+  imageWrap.className = 'cart-item-card__imageWrap produto-img-bg';
+  const img = document.createElement('img');
+  img.src = item.imagem;
+  img.alt = item.nome;
+  img.className = 'produto-img cart-item-card__image';
+  img.onerror = function () { this.src = 'src/img/logo.png'; this.style.objectFit = 'contain'; };
+  imageWrap.appendChild(img);
 
-    <div class="cart-item-card__info">
-      <h3 class="product-card__title cart-item-card__title">${item.nome}</h3>
-      <p class="cart-item-card__description">${item.descricao}</p>
-    </div>
+  // Info
+  const info = document.createElement('div');
+  info.className = 'cart-item-card__info';
+  const title = document.createElement('h3');
+  title.className = 'product-card__title cart-item-card__title';
+  title.textContent = item.nome;
+  const desc = document.createElement('p');
+  desc.className = 'cart-item-card__description';
+  desc.textContent = item.descricao;
+  info.appendChild(title);
+  info.appendChild(desc);
 
-    <div class="cart-item-card__qty" aria-label="Controle de quantidade">
-      <button class="cart-item-card__qtyBtn" type="button" aria-label="Diminuir quantidade">-</button>
-      <span class="cart-item-card__qtyValue">${item.quantidade}</span>
-      <button class="cart-item-card__qtyBtn" type="button" aria-label="Aumentar quantidade">+</button>
-    </div>
+  // Qty
+  const qtyWrap = document.createElement('div');
+  qtyWrap.className = 'cart-item-card__qty';
+  qtyWrap.setAttribute('aria-label', 'Controle de quantidade');
+  const btnMinus = document.createElement('button');
+  btnMinus.className = 'cart-item-card__qtyBtn';
+  btnMinus.type = 'button';
+  btnMinus.setAttribute('aria-label', 'Diminuir quantidade');
+  btnMinus.textContent = '-';
+  const qtyValue = document.createElement('span');
+  qtyValue.className = 'cart-item-card__qtyValue';
+  qtyValue.textContent = item.quantidade;
+  const btnPlus = document.createElement('button');
+  btnPlus.className = 'cart-item-card__qtyBtn';
+  btnPlus.type = 'button';
+  btnPlus.setAttribute('aria-label', 'Aumentar quantidade');
+  btnPlus.textContent = '+';
+  qtyWrap.appendChild(btnMinus);
+  qtyWrap.appendChild(qtyValue);
+  qtyWrap.appendChild(btnPlus);
 
-    <div class="cart-item-card__price">${formatarPreco(subtotal)}</div>
+  // Price
+  const priceEl = document.createElement('div');
+  priceEl.className = 'cart-item-card__price';
+  priceEl.textContent = formatarPreco(subtotal);
 
-    <button class="cart-item-card__remove" type="button" aria-label="Remover item">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  // Remove button (SVG is static, safe)
+  const removerBtn = document.createElement('button');
+  removerBtn.className = 'cart-item-card__remove';
+  removerBtn.type = 'button';
+  removerBtn.setAttribute('aria-label', 'Remover item');
+  removerBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 6h18" />
         <path d="M8 6V4h8v2" />
         <path d="M19 6l-1 14H6L5 6" />
         <path d="M10 11v6" />
         <path d="M14 11v6" />
-      </svg>
-    </button>
-  `;
+      </svg>`;
 
-  const qtyBtns = card.querySelectorAll('.cart-item-card__qtyBtn');
-  const removerBtn = card.querySelector('.cart-item-card__remove');
+  card.appendChild(imageWrap);
+  card.appendChild(info);
+  card.appendChild(qtyWrap);
+  card.appendChild(priceEl);
+  card.appendChild(removerBtn);
 
-  qtyBtns[0]?.addEventListener('click', () => alterarQuantidade(item.id, -1));
-  qtyBtns[1]?.addEventListener('click', () => alterarQuantidade(item.id, 1));
-
-  removerBtn?.addEventListener('click', () => {
+  btnMinus.addEventListener('click', () => alterarQuantidade(item.id, -1));
+  btnPlus.addEventListener('click', () => alterarQuantidade(item.id, 1));
+  removerBtn.addEventListener('click', () => {
     removerItem(item.id);
   });
 
