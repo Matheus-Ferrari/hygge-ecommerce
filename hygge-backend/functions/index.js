@@ -327,7 +327,55 @@ exports.criarPreferencia = onRequest({cors: ALLOWED_ORIGINS, secrets: [mpKeyPara
       return;
     }
 
-    const docId = String(usuarioId);
+    let docId = String(usuarioId);
+
+    // --- Autenticação: verificar token se presente, senão aceitar apenas guest ---
+    const authHeader = req.headers.authorization || "";
+    if (authHeader.startsWith("Bearer ")) {
+      const idToken = authHeader.split("Bearer ")[1];
+      const decoded = await admin.auth().verifyIdToken(idToken);
+      docId = decoded.uid; // Usa o UID do token, não o enviado pelo client
+    } else if (!docId.startsWith("guest_")) {
+      res.status(401).json({error: "Autenticação necessária"});
+      return;
+    }
+
+    // --- Validação de preços server-side ---
+    if (!Array.isArray(itens) || itens.length === 0) {
+      res.status(400).json({error: "Carrinho vazio"});
+      return;
+    }
+
+    const productsSnap = await admin.firestore().collection("products").get();
+    const productMap = {};
+    productsSnap.forEach((d) => {
+      productMap[d.id] = d.data();
+    });
+
+    const validatedItems = itens.map((item) => {
+      const itemId = String(item.id);
+      const product = productMap[itemId];
+      if (!product) {
+        logger.error(`Produto não encontrado no Firestore: ${itemId}`);
+        throw new Error(`Produto não encontrado: ${itemId}`);
+      }
+      const serverPrice = Number(product.preco ?? product.price ?? product.valor ?? product.precoVenda ?? 0);
+      if (serverPrice <= 0) {
+        logger.error(`Preço inválido para produto ${item.id}:`, product);
+        throw new Error(`Preço inválido para o produto: ${item.id}`);
+      }
+      const qty = Math.max(1, Math.floor(Number(item.quantidade || 1)));
+      return {
+        id: String(item.id),
+        nome: String(product.nome || product.name || item.nome || "Produto"),
+        preco: serverPrice,
+        quantidade: qty,
+      };
+    });
+
+    const subtotal = validatedItems.reduce((acc, i) => acc + (i.preco * i.quantidade), 0);
+    const freteVal = Math.max(0, Number(frete || 0));
+
     const draftRef = admin.firestore().collection("orders_draft").doc(docId);
 
     await draftRef.set({
@@ -340,10 +388,10 @@ exports.criarPreferencia = onRequest({cors: ALLOWED_ORIGINS, secrets: [mpKeyPara
       email: cliente?.email || null,
       nome: cliente?.nome || "Cliente",
       telefone: cliente?.telefone || null,
-      produtos: itens,
-      subtotal: itens.reduce((acc, i) => acc + (Number(i.preco) * Number(i.quantidade)), 0),
-      frete: Number(frete || 0),
-      total: itens.reduce((acc, i) => acc + (Number(i.preco) * Number(i.quantidade)), 0) + Number(frete || 0),
+      produtos: validatedItems,
+      subtotal: subtotal,
+      frete: freteVal,
+      total: subtotal + freteVal,
       dadosEntrega: {
         endereco: dadosEntrega?.endereco || null,
         numero: dadosEntrega?.numero || null,
@@ -359,7 +407,7 @@ exports.criarPreferencia = onRequest({cors: ALLOWED_ORIGINS, secrets: [mpKeyPara
     const mpClient = new MercadoPagoConfig({ accessToken: mpKeyParam.value() });
     const preference = new Preference(mpClient);
 
-    const mpItems = itens.map((item) => ({
+    const mpItems = validatedItems.map((item) => ({
       id: String(item.id),
       title: String(item.nome),
       unit_price: Number(item.preco),
@@ -367,11 +415,11 @@ exports.criarPreferencia = onRequest({cors: ALLOWED_ORIGINS, secrets: [mpKeyPara
       currency_id: "BRL",
     }));
 
-    if (Number(frete) > 0) {
+    if (freteVal > 0) {
       mpItems.push({
         id: "FRETE",
         title: "Custo de Entrega",
-        unit_price: Number(frete),
+        unit_price: Number(freteVal),
         quantity: 1,
         currency_id: "BRL",
       });
@@ -389,11 +437,14 @@ exports.criarPreferencia = onRequest({cors: ALLOWED_ORIGINS, secrets: [mpKeyPara
       payment_methods: { installments: 12 },
     };
 
+    logger.info("MP preference body:", JSON.stringify(body));
+
     const response = await preference.create({body});
     res.json({id: response.id, init_point: response.init_point});
 
   } catch (error) {
     logger.error("Erro ao criar preferência:", error);
+    logger.error("Detalhes do erro MP:", {status: error.status, errorCode: error.error, message: error.message, cause: error.cause});
     res.status(500).json({error: "Erro interno ao gerar pagamento"});
   }
 });
@@ -471,7 +522,11 @@ exports.notificacaoPagamento = onRequest(
   async (req, res) => {
   try {
     const webhookSec = mpWebhookSecret.value();
-    if (webhookSec && !verificarAssinaturaMP(req, webhookSec)) {
+    if (!webhookSec) {
+      logger.error("[Webhook] MP_WEBHOOK_SECRET não configurado. Rejeitando requisição.");
+      return res.status(500).send("Webhook secret not configured");
+    }
+    if (!verificarAssinaturaMP(req, webhookSec)) {
       logger.warn("[Webhook] Assinatura inválida rejeitada.", {ip: req.ip});
       return res.status(403).send("Forbidden");
     }
@@ -995,11 +1050,7 @@ exports.consultarStatusPedido = onRequest({cors: ALLOWED_ORIGINS}, async (req, r
           const d = orderSnap.data() || {};
           return res.json({
             found: true, source: "orders", orderId: orderSnap.id,
-            paymentId: d.mercadopago_id || paymentId,
-            externalReference: d.external_reference || externalReference,
             status: d.status_pagamento || "approved", approved: true,
-            total: d.valor_total ?? d.valores?.total ?? null,
-            itens: d.itens || null, cliente: d.cliente || null,
           });
         }
       } catch (e) {}
@@ -1013,10 +1064,7 @@ exports.consultarStatusPedido = onRequest({cors: ALLOWED_ORIGINS}, async (req, r
           const approved = d.status_pagamento === "approved";
           return res.json({
             found: true, source: "orders_draft", orderId: draftSnap.id,
-            paymentId: d.mercadopago_id || d.payment_id || paymentId,
-            externalReference, status: d.status_pagamento || "pending", approved,
-            total: d.total ?? null, itens: d.produtos || null,
-            cliente: d.cliente || {nome: d.nome || null, email: d.email || null},
+            status: d.status_pagamento || "pending", approved,
           });
         }
       } catch (e) {}
@@ -1032,10 +1080,7 @@ exports.consultarStatusPedido = onRequest({cors: ALLOWED_ORIGINS}, async (req, r
           const approved = d.status_pagamento === "approved";
           return res.json({
             found: true, source: "orders_draft_by_payment_id", orderId: doc.id,
-            paymentId, externalReference: d.external_reference || externalReference,
             status: d.status_pagamento || "pending", approved,
-            total: d.total ?? null, itens: d.produtos || null,
-            cliente: d.cliente || {nome: d.nome || null, email: d.email || null},
           });
         }
       } catch (e) {}
@@ -1043,7 +1088,7 @@ exports.consultarStatusPedido = onRequest({cors: ALLOWED_ORIGINS}, async (req, r
 
     return res.json({
       found: false, source: null, orderId: null,
-      paymentId, externalReference, status: "not_found", approved: false,
+      status: "not_found", approved: false,
     });
   } catch (error) {
     logger.error("[consultarStatusPedido] Erro:", error);

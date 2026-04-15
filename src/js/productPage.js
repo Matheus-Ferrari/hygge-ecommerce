@@ -367,7 +367,7 @@ const init = async () => {
   const imagens = resolveGalleryUrls(fromFirebase?.galeria);
 
   const product = {
-    id: slug,
+    id: fromFirebase.id,
     nome: safeText(fromFirebase.nome),
     preco: Number(fromFirebase.preco) || 0,
     descricao: safeText(fromFirebase.descricao),
