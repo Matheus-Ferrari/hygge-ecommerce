@@ -589,7 +589,7 @@ async function gerarNotaFiscalBling(idDoPedidoBling) {
     };
 
     // 1. Gera a NF vinculada ao pedido
-    const urlGerar = `https://www.bling.com.br/Api/v3/pedidos/vendas/${idDoPedidoBling}/gerar-nfe`;
+    const urlGerar = `https://api.bling.com.br/Api/v3/pedidos/vendas/${idDoPedidoBling}/gerar-nfe`;
     logger.info(`Gerando NF-e para pedido ${idDoPedidoBling} via ${urlGerar}`);
 
     const nfResp = await axios.post(urlGerar, {}, { headers });
@@ -610,7 +610,7 @@ async function gerarNotaFiscalBling(idDoPedidoBling) {
       // Fallback: busca a NF mais recente vinculada ao pedido
       await sleep(2000);
       const pedidoResp = await axios.get(
-        `https://www.bling.com.br/Api/v3/pedidos/vendas/${idDoPedidoBling}`,
+        `https://api.bling.com.br/Api/v3/pedidos/vendas/${idDoPedidoBling}`,
         { headers }
       );
       logger.info(`Dados do pedido:`, JSON.stringify(pedidoResp.data?.data?.notaFiscal || pedidoResp.data?.data?.nfe || "nenhuma NF encontrada"));
@@ -625,7 +625,7 @@ async function gerarNotaFiscalBling(idDoPedidoBling) {
 
       logger.info(`✅ NF ${idNFFallback} encontrada via GET pedido. Enviando para a Sefaz...`);
       await sleep(1000);
-      const urlEnviar = `https://www.bling.com.br/Api/v3/nfe/${idNFFallback}/enviar`;
+      const urlEnviar = `https://api.bling.com.br/Api/v3/nfe/${idNFFallback}/enviar`;
       await axios.post(urlEnviar, {}, { headers });
       logger.info(`✅ NF ${idNFFallback} enviada para a Sefaz com sucesso!`);
       return idNFFallback;
@@ -637,7 +637,7 @@ async function gerarNotaFiscalBling(idDoPedidoBling) {
     await sleep(2000);
 
     // 3. Envia a NF para a Sefaz
-    const urlEnviar = `https://www.bling.com.br/Api/v3/nfe/${idNF}/enviar`;
+    const urlEnviar = `https://api.bling.com.br/Api/v3/nfe/${idNF}/enviar`;
     logger.info(`Enviando NF ${idNF} para a Sefaz via ${urlEnviar}`);
 
     await axios.post(urlEnviar, {}, { headers });
@@ -679,7 +679,7 @@ async function obterTokenBling() {
   params.append("refresh_token", dados.refresh_token);
 
   const resp = await axios.post(
-    "https://www.bling.com.br/Api/v3/oauth/token",
+    "https://api.bling.com.br/Api/v3/oauth/token",
     params.toString(),
     { headers: { "Content-Type": "application/x-www-form-urlencoded", "Authorization": `Basic ${credentials}` } },
   );
@@ -715,7 +715,7 @@ exports.callbackBling = onRequest({cors: true, secrets: [blingClientId, blingCli
     params.append("code", code);
 
     const resp = await axios.post(
-      "https://www.bling.com.br/Api/v3/oauth/token",
+      "https://api.bling.com.br/Api/v3/oauth/token",
       params.toString(),
       { headers: { "Content-Type": "application/x-www-form-urlencoded", "Authorization": `Basic ${credentials}` } },
     );
@@ -778,7 +778,7 @@ async function enviarParaBling(dadosPagamento) {
 
     if (emailContato) {
       try {
-        const buscaEmail = await axios.get(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(emailContato)}`, {headers});
+        const buscaEmail = await axios.get(`https://api.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(emailContato)}`, {headers});
         if (buscaEmail.data?.data?.length > 0) idDoContato = buscaEmail.data.data[0].id;
       } catch (e) {}
       await sleep(400);
@@ -786,11 +786,11 @@ async function enviarParaBling(dadosPagamento) {
 
     if (!idDoContato && cpfLimpo) {
       try {
-        const buscaDoc = await axios.get(`https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${encodeURIComponent(cpfLimpo)}`, {headers});
+        const buscaDoc = await axios.get(`https://api.bling.com.br/Api/v3/contatos?numeroDocumento=${encodeURIComponent(cpfLimpo)}`, {headers});
         await sleep(400);
         let lista = Array.isArray(buscaDoc.data?.data) ? buscaDoc.data.data : [];
         if (lista.length === 0) {
-          const buscaGeral = await axios.get("https://www.bling.com.br/Api/v3/contatos?criterio=1", {headers});
+          const buscaGeral = await axios.get("https://api.bling.com.br/Api/v3/contatos?criterio=1", {headers});
           await sleep(400);
           const geral = Array.isArray(buscaGeral.data?.data) ? buscaGeral.data.data : [];
           lista = geral.filter((c) => String(c?.numeroDocumento || "").replace(/\D/g, "") === cpfLimpo);
@@ -817,7 +817,7 @@ async function enviarParaBling(dadosPagamento) {
       if (cpfLimpo) payloadContato.numeroDocumento = cpfLimpo;
 
       try {
-        const contatoResp = await axios.post("https://www.bling.com.br/Api/v3/contatos", payloadContato, {headers});
+        const contatoResp = await axios.post("https://api.bling.com.br/Api/v3/contatos", payloadContato, {headers});
         idDoContato = contatoResp.data?.data?.id || null;
       } catch (errC) {
         throw errC;
@@ -829,7 +829,7 @@ async function enviarParaBling(dadosPagamento) {
     if (idDoContato && cpfLimpo) {
       try {
         await axios.put(
-          `https://www.bling.com.br/Api/v3/contatos/${idDoContato}`,
+          `https://api.bling.com.br/Api/v3/contatos/${idDoContato}`,
           { numeroDocumento: cpfLimpo },
           { headers }
         );
@@ -866,7 +866,7 @@ async function enviarParaBling(dadosPagamento) {
       let idInternoBling = null;
 
       try {
-        const buscaProd = await axios.get(`https://www.bling.com.br/Api/v3/produtos?codigo=${encodeURIComponent(skuReal)}`, {headers});
+        const buscaProd = await axios.get(`https://api.bling.com.br/Api/v3/produtos?codigo=${encodeURIComponent(skuReal)}`, {headers});
         if (buscaProd.data?.data?.length > 0) idInternoBling = buscaProd.data.data[0].id;
         await sleep(350); 
       } catch (errProd) {}
@@ -915,7 +915,7 @@ async function enviarParaBling(dadosPagamento) {
 
     logger.info("Payload enviado ao Bling:", JSON.stringify(pedidoBling));
 
-    const vendaResp = await axios.post("https://www.bling.com.br/Api/v3/pedidos/vendas", pedidoBling, { headers });
+    const vendaResp = await axios.post("https://api.bling.com.br/Api/v3/pedidos/vendas", pedidoBling, { headers });
     const idPedidoBling = vendaResp.data?.data?.id;
     logger.info(`✅ Venda ${idPedidoBling} criada como "Em aberto".`);
 
