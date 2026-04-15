@@ -1,29 +1,23 @@
 import { db } from './firebaseConfig.js';
-import { collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 
 function normalizar(str) {
   return String(str || '').trim().normalize('NFC').toLowerCase();
 }
 
 /**
- * Busca um cupom pelo nome na coleção `cupons` do Firestore.
- * Compara normalizando acentos e caixa para evitar problemas de encoding.
+ * Busca um cupom pelo código na coleção `cupons` do Firestore.
+ * O document ID deve ser o código normalizado do cupom (ex: 'teste100').
  */
 async function buscarCupomPorNome(nome) {
   const nomeNorm = normalizar(nome);
   if (!nomeNorm) return null;
 
   try {
-    const snapshot = await getDocs(collection(db, 'cupons'));
-    if (snapshot.empty) return null;
-
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
-      if (normalizar(data.nome) === nomeNorm) {
-        return data;
-      }
-    }
-    return null;
+    const cupomRef = doc(db, 'cupons', nomeNorm);
+    const cupomSnap = await getDoc(cupomRef);
+    if (!cupomSnap.exists()) return null;
+    return cupomSnap.data();
   } catch (err) {
     console.error('Erro ao buscar cupom no Firestore:', err);
     return null;
