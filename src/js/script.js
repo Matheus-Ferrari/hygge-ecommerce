@@ -1,6 +1,7 @@
 import { doc, getDoc } from 'firebase/firestore';
 import { ref, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase/firebaseConfig.js';
+import './metaPixel.js'; // Meta Pixel — PageView automático em todas as páginas
 
 const TRANSPARENT_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
 const ASSET_CACHE_KEY = 'hygge_assets_v1';

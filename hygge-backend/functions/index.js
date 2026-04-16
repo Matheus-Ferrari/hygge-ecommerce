@@ -1,18 +1,115 @@
 const {onRequest} = require("firebase-functions/v2/https");
-const {defineString} = require("firebase-functions/params");
+const {defineSecret} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const crypto = require("crypto");
 const {MercadoPagoConfig, Preference, Payment} = require("mercadopago");
 const axios = require("axios");
 const {generateEmailTemplate} = require("./emailTemplates.cjs");
 
 /**
- * CONFIGURAÇÃO DE PARÂMETROS DE AMBIENTE
+ * SECRETS (Google Cloud Secret Manager)
+ * Para configurar no deploy: firebase functions:secrets:set NOME_DO_SECRET
+ * Para desenvolvimento local: crie hygge-backend/functions/.secret.local
  */
-const mpKeyParam = defineString("MP_KEY", {default: "TESTE"});
-const blingClientId = defineString("BLING_CLIENT_ID");
-const blingClientSecret = defineString("BLING_CLIENT_SECRET");
-const melhorEnvioToken = defineString("MELHOR_ENVIO_TOKEN", {default: "TESTE"});
+const mpKeyParam = defineSecret("MP_KEY");
+const blingClientId = defineSecret("BLING_CLIENT_ID");
+const blingClientSecret = defineSecret("BLING_CLIENT_SECRET");
+const melhorEnvioToken = defineSecret("MELHOR_ENVIO_TOKEN");
+const mpWebhookSecret = defineSecret("MP_WEBHOOK_SECRET");
+const metaCapiToken = defineSecret("META_CAPI_TOKEN");
+
+/**
+ * ORIGENS PERMITIDAS (CORS)
+ */
+const ALLOWED_ORIGINS = [
+  "https://hyggegames.com.br",
+  "https://e-commerce-hygge.web.app",
+  "https://e-commerce-hygge.firebaseapp.com",
+];
+
+/**
+ * Verifica a assinatura HMAC-SHA256 do webhook do Mercado Pago.
+ * Referência: https://www.mercadopago.com.br/developers/pt/docs/your-integrations/notifications/webhooks
+ */
+function verificarAssinaturaMP(req, secret) {
+  const xSignature = req.headers["x-signature"];
+  const xRequestId = req.headers["x-request-id"];
+
+  if (!xSignature || !xRequestId) return false;
+
+  const parts = {};
+  xSignature.split(",").forEach((pair) => {
+    const eqIdx = pair.indexOf("=");
+    if (eqIdx === -1) return;
+    parts[pair.slice(0, eqIdx).trim()] = pair.slice(eqIdx + 1).trim();
+  });
+
+  if (!parts.ts || !parts.v1) return false;
+
+  const dataId = req.body?.data?.id;
+  if (!dataId) return false;
+
+  const manifest = `id:${dataId};request-id:${xRequestId};ts:${parts.ts};`;
+  const expected = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
+
+  try {
+    const expectedBuf = Buffer.from(expected, "hex");
+    const receivedBuf = Buffer.from(parts.v1, "hex");
+    if (expectedBuf.length !== receivedBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, receivedBuf);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Meta Conversions API (CAPI) — envia evento server-side para o Meta.
+ * Usa SHA-256 para hashear dados do usuário (email, telefone).
+ */
+const META_PIXEL_ID = "1398665571980464";
+
+function sha256(value) {
+  if (!value) return null;
+  return crypto.createHash("sha256").update(String(value).trim().toLowerCase()).digest("hex");
+}
+
+async function enviarEventoMetaCAPI({eventName, eventId, email, phone, value, currency, contentIds, orderId, capiToken}) {
+  const userData = {};
+  if (email) userData.em = [sha256(email)];
+  if (phone) {
+    // Remove tudo que não é dígito e adiciona código do país se necessário
+    let cleaned = String(phone).replace(/\D/g, "");
+    if (cleaned.length <= 11) cleaned = "55" + cleaned;
+    userData.ph = [sha256(cleaned)];
+  }
+
+  const eventData = {
+    event_name: eventName,
+    event_time: Math.floor(Date.now() / 1000),
+    action_source: "website",
+    user_data: userData,
+    custom_data: {
+      value: Number(value || 0),
+      currency: currency || "BRL",
+      content_ids: contentIds || [],
+      content_type: "product",
+      order_id: orderId || undefined,
+    },
+  };
+
+  if (eventId) eventData.event_id = eventId;
+
+  const body = {data: [eventData]};
+
+  const url = `https://graph.facebook.com/v21.0/${META_PIXEL_ID}/events?access_token=${encodeURIComponent(capiToken)}`;
+  const resp = await axios.post(url, body, {
+    headers: {"Content-Type": "application/json"},
+    timeout: 10000,
+  });
+
+  logger.info("[CAPI] Evento enviado:", {eventName, eventId, status: resp.status, response: resp.data});
+}
 
 // --- FUNÇÕES AUXILIARES DE FORMATAÇÃO E E-MAIL ---
 
@@ -262,28 +359,72 @@ async function finalizeOrderInFirestore({
 admin.initializeApp();
 const db = admin.firestore();
 
-const mpClient = new MercadoPagoConfig({
-  accessToken: mpKeyParam.value(),
-});
-
 /**
  * 1. FUNÇÃO: Criar Preferência (Checkout Mercado Pago)
  */
-exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
+exports.criarPreferencia = onRequest({cors: ALLOWED_ORIGINS, secrets: [mpKeyParam]}, async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).send("Método não permitido");
     return;
   }
 
   try {
-    const {itens, usuarioId, frete, cliente, dadosEntrega} = req.body;
+    const {itens, usuarioId, frete, cliente, dadosEntrega, fbEventId} = req.body;
 
     if (!usuarioId) {
       res.status(400).json({error: "usuarioId é obrigatório"});
       return;
     }
 
-    const docId = String(usuarioId);
+    let docId = String(usuarioId);
+
+    // --- Autenticação: verificar token se presente, senão aceitar apenas guest ---
+    const authHeader = req.headers.authorization || "";
+    if (authHeader.startsWith("Bearer ")) {
+      const idToken = authHeader.split("Bearer ")[1];
+      const decoded = await admin.auth().verifyIdToken(idToken);
+      docId = decoded.uid; // Usa o UID do token, não o enviado pelo client
+    } else if (!docId.startsWith("guest_")) {
+      res.status(401).json({error: "Autenticação necessária"});
+      return;
+    }
+
+    // --- Validação de preços server-side ---
+    if (!Array.isArray(itens) || itens.length === 0) {
+      res.status(400).json({error: "Carrinho vazio"});
+      return;
+    }
+
+    const productsSnap = await admin.firestore().collection("products").get();
+    const productMap = {};
+    productsSnap.forEach((d) => {
+      productMap[d.id] = d.data();
+    });
+
+    const validatedItems = itens.map((item) => {
+      const itemId = String(item.id);
+      const product = productMap[itemId];
+      if (!product) {
+        logger.error(`Produto não encontrado no Firestore: ${itemId}`);
+        throw new Error(`Produto não encontrado: ${itemId}`);
+      }
+      const serverPrice = Number(product.preco ?? product.price ?? product.valor ?? product.precoVenda ?? 0);
+      if (serverPrice <= 0) {
+        logger.error(`Preço inválido para produto ${item.id}:`, product);
+        throw new Error(`Preço inválido para o produto: ${item.id}`);
+      }
+      const qty = Math.max(1, Math.floor(Number(item.quantidade || 1)));
+      return {
+        id: String(item.id),
+        nome: String(product.nome || product.name || item.nome || "Produto"),
+        preco: serverPrice,
+        quantidade: qty,
+      };
+    });
+
+    const subtotal = validatedItems.reduce((acc, i) => acc + (i.preco * i.quantidade), 0);
+    const freteVal = Math.max(0, Number(frete || 0));
+
     const draftRef = admin.firestore().collection("orders_draft").doc(docId);
 
     await draftRef.set({
@@ -296,10 +437,10 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
       email: cliente?.email || null,
       nome: cliente?.nome || "Cliente",
       telefone: cliente?.telefone || null,
-      produtos: itens,
-      subtotal: itens.reduce((acc, i) => acc + (Number(i.preco) * Number(i.quantidade)), 0),
-      frete: Number(frete || 0),
-      total: itens.reduce((acc, i) => acc + (Number(i.preco) * Number(i.quantidade)), 0) + Number(frete || 0),
+      produtos: validatedItems,
+      subtotal: subtotal,
+      frete: freteVal,
+      total: subtotal + freteVal,
       dadosEntrega: {
         endereco: dadosEntrega?.endereco || null,
         numero: dadosEntrega?.numero || null,
@@ -309,13 +450,14 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
         cep: dadosEntrega?.cep || null
       },
       status_pagamento: "pending",
+      fbEventId: fbEventId || null,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 
     const mpClient = new MercadoPagoConfig({ accessToken: mpKeyParam.value() });
     const preference = new Preference(mpClient);
 
-    const mpItems = itens.map((item) => ({
+    const mpItems = validatedItems.map((item) => ({
       id: String(item.id),
       title: String(item.nome),
       unit_price: Number(item.preco),
@@ -323,11 +465,11 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
       currency_id: "BRL",
     }));
 
-    if (Number(frete) > 0) {
+    if (freteVal > 0) {
       mpItems.push({
         id: "FRETE",
         title: "Custo de Entrega",
-        unit_price: Number(frete),
+        unit_price: Number(freteVal),
         quantity: 1,
         currency_id: "BRL",
       });
@@ -345,11 +487,14 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
       payment_methods: { installments: 12 },
     };
 
+    logger.info("MP preference body:", JSON.stringify(body));
+
     const response = await preference.create({body});
     res.json({id: response.id, init_point: response.init_point});
 
   } catch (error) {
     logger.error("Erro ao criar preferência:", error);
+    logger.error("Detalhes do erro MP:", {status: error.status, errorCode: error.error, message: error.message, cause: error.cause});
     res.status(500).json({error: "Erro interno ao gerar pagamento"});
   }
 });
@@ -357,7 +502,7 @@ exports.criarPreferencia = onRequest({cors: true}, async (req, res) => {
 /**
  * 2. FUNÇÃO: Cálculo de Frete (MELHOR ENVIO)
  */
-exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
+exports.calcularFrete = onRequest({cors: ALLOWED_ORIGINS, secrets: [melhorEnvioToken]}, async (req, res) => {
   if (req.method !== "POST") return res.status(405).send("Método não permitido");
   
   try {
@@ -422,13 +567,26 @@ exports.calcularFrete = onRequest({cors: true}, async (req, res) => {
 /**
  * 3. FUNÇÃO: Webhook de Notificação Mercado Pago
  */
-exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
+exports.notificacaoPagamento = onRequest(
+  {cors: true, secrets: [mpKeyParam, mpWebhookSecret, blingClientId, blingClientSecret, metaCapiToken]},
+  async (req, res) => {
   try {
+    const webhookSec = mpWebhookSecret.value();
+    if (!webhookSec) {
+      logger.error("[Webhook] MP_WEBHOOK_SECRET não configurado. Rejeitando requisição.");
+      return res.status(500).send("Webhook secret not configured");
+    }
+    if (!verificarAssinaturaMP(req, webhookSec)) {
+      logger.warn("[Webhook] Assinatura inválida rejeitada.", {ip: req.ip});
+      return res.status(403).send("Forbidden");
+    }
+
     const {action, data} = req.body;
     logger.info("[Webhook] Notificação recebida.", {action, paymentDataId: data?.id});
 
     if (action === "payment.created" || action === "payment.updated") {
-      const payment = new Payment(mpClient);
+      const clientMP = new MercadoPagoConfig({accessToken: mpKeyParam.value()});
+      const payment = new Payment(clientMP);
       const paymentDetails = await payment.get({id: data.id});
 
       if (paymentDetails.status === "approved") {
@@ -511,6 +669,26 @@ exports.notificacaoPagamento = onRequest({cors: true}, async (req, res) => {
         }
 
         await enviarParaBling(paymentDetails);
+
+        // --- Meta Conversions API (CAPI) — Purchase ---
+        try {
+          const capiToken = metaCapiToken.value();
+          if (capiToken) {
+            await enviarEventoMetaCAPI({
+              eventName: "Purchase",
+              eventId: draftData?.fbEventId || null,
+              email: payerEmail,
+              phone: draftData?.cliente?.telefone || draftData?.telefone || null,
+              value: total,
+              currency: "BRL",
+              contentIds: items.map((i) => String(i.id)),
+              orderId: paymentId,
+              capiToken,
+            });
+          }
+        } catch (capiErr) {
+          logger.error("Erro ao enviar evento CAPI:", capiErr.message);
+        }
       }
     }
     res.status(200).send("OK");
@@ -536,7 +714,7 @@ async function gerarNotaFiscalBling(idDoPedidoBling) {
     };
 
     // 1. Gera a NF vinculada ao pedido
-    const urlGerar = `https://www.bling.com.br/Api/v3/pedidos/vendas/${idDoPedidoBling}/gerar-nfe`;
+    const urlGerar = `https://api.bling.com.br/Api/v3/pedidos/vendas/${idDoPedidoBling}/gerar-nfe`;
     logger.info(`Gerando NF-e para pedido ${idDoPedidoBling} via ${urlGerar}`);
 
     const nfResp = await axios.post(urlGerar, {}, { headers });
@@ -557,7 +735,7 @@ async function gerarNotaFiscalBling(idDoPedidoBling) {
       // Fallback: busca a NF mais recente vinculada ao pedido
       await sleep(2000);
       const pedidoResp = await axios.get(
-        `https://www.bling.com.br/Api/v3/pedidos/vendas/${idDoPedidoBling}`,
+        `https://api.bling.com.br/Api/v3/pedidos/vendas/${idDoPedidoBling}`,
         { headers }
       );
       logger.info(`Dados do pedido:`, JSON.stringify(pedidoResp.data?.data?.notaFiscal || pedidoResp.data?.data?.nfe || "nenhuma NF encontrada"));
@@ -572,7 +750,7 @@ async function gerarNotaFiscalBling(idDoPedidoBling) {
 
       logger.info(`✅ NF ${idNFFallback} encontrada via GET pedido. Enviando para a Sefaz...`);
       await sleep(1000);
-      const urlEnviar = `https://www.bling.com.br/Api/v3/nfe/${idNFFallback}/enviar`;
+      const urlEnviar = `https://api.bling.com.br/Api/v3/nfe/${idNFFallback}/enviar`;
       await axios.post(urlEnviar, {}, { headers });
       logger.info(`✅ NF ${idNFFallback} enviada para a Sefaz com sucesso!`);
       return idNFFallback;
@@ -584,7 +762,7 @@ async function gerarNotaFiscalBling(idDoPedidoBling) {
     await sleep(2000);
 
     // 3. Envia a NF para a Sefaz
-    const urlEnviar = `https://www.bling.com.br/Api/v3/nfe/${idNF}/enviar`;
+    const urlEnviar = `https://api.bling.com.br/Api/v3/nfe/${idNF}/enviar`;
     logger.info(`Enviando NF ${idNF} para a Sefaz via ${urlEnviar}`);
 
     await axios.post(urlEnviar, {}, { headers });
@@ -626,7 +804,7 @@ async function obterTokenBling() {
   params.append("refresh_token", dados.refresh_token);
 
   const resp = await axios.post(
-    "https://www.bling.com.br/Api/v3/oauth/token",
+    "https://api.bling.com.br/Api/v3/oauth/token",
     params.toString(),
     { headers: { "Content-Type": "application/x-www-form-urlencoded", "Authorization": `Basic ${credentials}` } },
   );
@@ -648,7 +826,7 @@ async function obterTokenBling() {
 /**
  * 4b. Bling OAuth2 — Callback
  */
-exports.callbackBling = onRequest({cors: true}, async (req, res) => {
+exports.callbackBling = onRequest({cors: true, secrets: [blingClientId, blingClientSecret]}, async (req, res) => {
   try {
     const code = req.query.code;
     if (!code) return res.status(400).send("Código ausente.");
@@ -662,7 +840,7 @@ exports.callbackBling = onRequest({cors: true}, async (req, res) => {
     params.append("code", code);
 
     const resp = await axios.post(
-      "https://www.bling.com.br/Api/v3/oauth/token",
+      "https://api.bling.com.br/Api/v3/oauth/token",
       params.toString(),
       { headers: { "Content-Type": "application/x-www-form-urlencoded", "Authorization": `Basic ${credentials}` } },
     );
@@ -725,7 +903,7 @@ async function enviarParaBling(dadosPagamento) {
 
     if (emailContato) {
       try {
-        const buscaEmail = await axios.get(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(emailContato)}`, {headers});
+        const buscaEmail = await axios.get(`https://api.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(emailContato)}`, {headers});
         if (buscaEmail.data?.data?.length > 0) idDoContato = buscaEmail.data.data[0].id;
       } catch (e) {}
       await sleep(400);
@@ -733,11 +911,11 @@ async function enviarParaBling(dadosPagamento) {
 
     if (!idDoContato && cpfLimpo) {
       try {
-        const buscaDoc = await axios.get(`https://www.bling.com.br/Api/v3/contatos?numeroDocumento=${encodeURIComponent(cpfLimpo)}`, {headers});
+        const buscaDoc = await axios.get(`https://api.bling.com.br/Api/v3/contatos?numeroDocumento=${encodeURIComponent(cpfLimpo)}`, {headers});
         await sleep(400);
         let lista = Array.isArray(buscaDoc.data?.data) ? buscaDoc.data.data : [];
         if (lista.length === 0) {
-          const buscaGeral = await axios.get("https://www.bling.com.br/Api/v3/contatos?criterio=1", {headers});
+          const buscaGeral = await axios.get("https://api.bling.com.br/Api/v3/contatos?criterio=1", {headers});
           await sleep(400);
           const geral = Array.isArray(buscaGeral.data?.data) ? buscaGeral.data.data : [];
           lista = geral.filter((c) => String(c?.numeroDocumento || "").replace(/\D/g, "") === cpfLimpo);
@@ -764,7 +942,7 @@ async function enviarParaBling(dadosPagamento) {
       if (cpfLimpo) payloadContato.numeroDocumento = cpfLimpo;
 
       try {
-        const contatoResp = await axios.post("https://www.bling.com.br/Api/v3/contatos", payloadContato, {headers});
+        const contatoResp = await axios.post("https://api.bling.com.br/Api/v3/contatos", payloadContato, {headers});
         idDoContato = contatoResp.data?.data?.id || null;
       } catch (errC) {
         throw errC;
@@ -776,7 +954,7 @@ async function enviarParaBling(dadosPagamento) {
     if (idDoContato && cpfLimpo) {
       try {
         await axios.put(
-          `https://www.bling.com.br/Api/v3/contatos/${idDoContato}`,
+          `https://api.bling.com.br/Api/v3/contatos/${idDoContato}`,
           { numeroDocumento: cpfLimpo },
           { headers }
         );
@@ -813,7 +991,7 @@ async function enviarParaBling(dadosPagamento) {
       let idInternoBling = null;
 
       try {
-        const buscaProd = await axios.get(`https://www.bling.com.br/Api/v3/produtos?codigo=${encodeURIComponent(skuReal)}`, {headers});
+        const buscaProd = await axios.get(`https://api.bling.com.br/Api/v3/produtos?codigo=${encodeURIComponent(skuReal)}`, {headers});
         if (buscaProd.data?.data?.length > 0) idInternoBling = buscaProd.data.data[0].id;
         await sleep(350); 
       } catch (errProd) {}
@@ -862,7 +1040,7 @@ async function enviarParaBling(dadosPagamento) {
 
     logger.info("Payload enviado ao Bling:", JSON.stringify(pedidoBling));
 
-    const vendaResp = await axios.post("https://www.bling.com.br/Api/v3/pedidos/vendas", pedidoBling, { headers });
+    const vendaResp = await axios.post("https://api.bling.com.br/Api/v3/pedidos/vendas", pedidoBling, { headers });
     const idPedidoBling = vendaResp.data?.data?.id;
     logger.info(`✅ Venda ${idPedidoBling} criada como "Em aberto".`);
 
@@ -883,12 +1061,7 @@ async function enviarParaBling(dadosPagamento) {
 /**
  * 5. FUNÇÃO: Solicitar redefinição de senha
  */
-exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => {
-  res.set("Access-Control-Allow-Origin", "*");
-  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.set("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+exports.solicitarRedefinicaoSenha = onRequest({cors: ALLOWED_ORIGINS}, async (req, res) => {
   if (req.method !== "POST") { res.status(405).send("Método não permitido"); return; }
 
   try {
@@ -931,7 +1104,7 @@ exports.solicitarRedefinicaoSenha = onRequest({cors: true}, async (req, res) => 
 /**
  * 6. FUNÇÃO: Consultar Status do Pedido
  */
-exports.consultarStatusPedido = onRequest({cors: true}, async (req, res) => {
+exports.consultarStatusPedido = onRequest({cors: ALLOWED_ORIGINS}, async (req, res) => {
   try {
     const externalReference = req.query.external_reference || req.body?.external_reference || null;
     const paymentId = req.query.payment_id || req.body?.payment_id || null;
@@ -947,11 +1120,7 @@ exports.consultarStatusPedido = onRequest({cors: true}, async (req, res) => {
           const d = orderSnap.data() || {};
           return res.json({
             found: true, source: "orders", orderId: orderSnap.id,
-            paymentId: d.mercadopago_id || paymentId,
-            externalReference: d.external_reference || externalReference,
             status: d.status_pagamento || "approved", approved: true,
-            total: d.valor_total ?? d.valores?.total ?? null,
-            itens: d.itens || null, cliente: d.cliente || null,
           });
         }
       } catch (e) {}
@@ -965,10 +1134,7 @@ exports.consultarStatusPedido = onRequest({cors: true}, async (req, res) => {
           const approved = d.status_pagamento === "approved";
           return res.json({
             found: true, source: "orders_draft", orderId: draftSnap.id,
-            paymentId: d.mercadopago_id || d.payment_id || paymentId,
-            externalReference, status: d.status_pagamento || "pending", approved,
-            total: d.total ?? null, itens: d.produtos || null,
-            cliente: d.cliente || {nome: d.nome || null, email: d.email || null},
+            status: d.status_pagamento || "pending", approved,
           });
         }
       } catch (e) {}
@@ -984,10 +1150,7 @@ exports.consultarStatusPedido = onRequest({cors: true}, async (req, res) => {
           const approved = d.status_pagamento === "approved";
           return res.json({
             found: true, source: "orders_draft_by_payment_id", orderId: doc.id,
-            paymentId, externalReference: d.external_reference || externalReference,
             status: d.status_pagamento || "pending", approved,
-            total: d.total ?? null, itens: d.produtos || null,
-            cliente: d.cliente || {nome: d.nome || null, email: d.email || null},
           });
         }
       } catch (e) {}
@@ -995,7 +1158,7 @@ exports.consultarStatusPedido = onRequest({cors: true}, async (req, res) => {
 
     return res.json({
       found: false, source: null, orderId: null,
-      paymentId, externalReference, status: "not_found", approved: false,
+      status: "not_found", approved: false,
     });
   } catch (error) {
     logger.error("[consultarStatusPedido] Erro:", error);

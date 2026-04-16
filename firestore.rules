@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 0. CONFIGURAÇÕES VISUAIS DO SITE (Logos, Banners, etc)
+    // Todo mundo pode ler, exceto o documento 'bling_tokens' que contém tokens OAuth sensíveis.
+    match /configuracoes/{document} {
+      allow read: if document != 'bling_tokens';
+      allow write: if false;
+    }
+
+    // 1. PRODUTOS: Leitura pública, escrita apenas pelo Admin SDK (backend).
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // 2. USUÁRIOS: Cada um só acessa o próprio perfil.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // 3. PEDIDOS OFICIAIS: Apenas o dono lê; criação/edição exclusiva do backend (Admin SDK).
+    match /orders/{orderId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    // 4. RASCUNHOS DE CHECKOUT: Usuário logado acessa o próprio doc; guest pode ler/criar/atualizar.
+    match /orders_draft/{draftId} {
+      allow read, write: if request.auth != null && request.auth.uid == draftId;
+      allow read, create, update: if draftId.matches('guest_.*');
+    }
+
+    // 5. E-MAILS TRANSACIONAIS: Apenas criar; validação de 'to' para evitar uso como relay.
+    match /mail/{document=**} {
+      allow create: if request.auth != null
+                    && request.resource.data.to is string
+                    && request.resource.data.to == request.auth.token.email;
+      allow read, update, delete: if false;
+    }
+
+    // 6. CUPONS: Leitura individual por código (doc ID); listagem bloqueada para evitar enumeração.
+    match /cupons/{cupomId} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // PADRÃO: Bloqueia tudo que não foi explicitamente liberado acima.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

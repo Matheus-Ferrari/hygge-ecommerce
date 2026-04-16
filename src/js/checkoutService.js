@@ -3,31 +3,35 @@
  * Centraliza as chamadas para as Cloud Functions da Hygge Games.
  */
 
+import { auth } from '../firebase/firebaseConfig.js';
+
 // URLs oficiais geradas no deploy do Firebase em us-central1
 const API_BASE_URL = "https://us-central1-e-commerce-hygge.cloudfunctions.net";
 
 /**
  * Envia os itens do carrinho e o frete para gerar o link de pagamento no Mercado Pago.
- * @param {Array} itens - Lista de objetos [{id, nome, preco, quantidade}]
- * @param {string} usuarioId - O UID do usuário vindo do Firebase Auth
- * @param {number} frete - O valor do frete calculado
- */
-/**
- * Envia os itens do carrinho e o frete para gerar o link de pagamento no Mercado Pago.
  * Agora também envia dados do cliente e entrega para salvar o rascunho no Firestore.
  */
-export const iniciarPagamentoMP = async (itens, usuarioId, frete = 0, cliente = {}, dadosEntrega = {}) => {
+export const iniciarPagamentoMP = async (itens, usuarioId, frete = 0, cliente = {}, dadosEntrega = {}, fbEventId = null) => {
+  const headers = { "Content-Type": "application/json" };
+
+  // Envia token de auth se o usuário estiver logado
+  const user = auth.currentUser;
+  if (user) {
+    const token = await user.getIdToken();
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_BASE_URL}/criarPreferencia`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
       itens: itens,
       usuarioId: usuarioId,
       frete: frete,
-      cliente: cliente,           // NOVO: Necessário para o rascunho e e-mail
-      dadosEntrega: dadosEntrega   // NOVO: Necessário para o endereço no Bling
+      cliente: cliente,
+      dadosEntrega: dadosEntrega,
+      fbEventId: fbEventId || undefined,
     }),
   });
 
