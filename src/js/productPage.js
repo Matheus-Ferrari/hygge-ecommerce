@@ -1,4 +1,5 @@
 import { getProducts } from '../firebase/productService.js';
+import { trackViewContent, trackAddToCart } from './metaPixel.js';
 
 // Specs padrão compartilhados por todos os jogos Hygge
 // Usados como fallback quando o campo não existe no Firestore
@@ -384,6 +385,13 @@ const init = async () => {
   updateTotalPrice();
   setMessage('');
 
+  // Meta Pixel — ViewContent
+  trackViewContent({
+    contentIds: [product.id],
+    contentName: product.nome,
+    value: product.preco,
+  });
+
   const addBtn = document.getElementById('add-to-cart-btn');
   const buyNowBtn = document.getElementById('buy-now-btn');
 
@@ -395,6 +403,14 @@ const init = async () => {
     }
 
     addToCart(product, quantity);
+
+    // Meta Pixel — AddToCart
+    trackAddToCart({
+      contentIds: [product.id],
+      contentName: product.nome,
+      value: product.preco * quantity,
+    });
+
     setMessage('Produto adicionado ao carrinho.');
   };
 

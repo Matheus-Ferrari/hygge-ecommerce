@@ -17,6 +17,7 @@ const blingClientId = defineSecret("BLING_CLIENT_ID");
 const blingClientSecret = defineSecret("BLING_CLIENT_SECRET");
 const melhorEnvioToken = defineSecret("MELHOR_ENVIO_TOKEN");
 const mpWebhookSecret = defineSecret("MP_WEBHOOK_SECRET");
+const metaCapiToken = defineSecret("META_CAPI_TOKEN");
 
 /**
  * ORIGENS PERMITIDAS (CORS)
@@ -60,6 +61,54 @@ function verificarAssinaturaMP(req, secret) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Meta Conversions API (CAPI) — envia evento server-side para o Meta.
+ * Usa SHA-256 para hashear dados do usuário (email, telefone).
+ */
+const META_PIXEL_ID = "1398665571980464";
+
+function sha256(value) {
+  if (!value) return null;
+  return crypto.createHash("sha256").update(String(value).trim().toLowerCase()).digest("hex");
+}
+
+async function enviarEventoMetaCAPI({eventName, eventId, email, phone, value, currency, contentIds, orderId, capiToken}) {
+  const userData = {};
+  if (email) userData.em = [sha256(email)];
+  if (phone) {
+    // Remove tudo que não é dígito e adiciona código do país se necessário
+    let cleaned = String(phone).replace(/\D/g, "");
+    if (cleaned.length <= 11) cleaned = "55" + cleaned;
+    userData.ph = [sha256(cleaned)];
+  }
+
+  const eventData = {
+    event_name: eventName,
+    event_time: Math.floor(Date.now() / 1000),
+    action_source: "website",
+    user_data: userData,
+    custom_data: {
+      value: Number(value || 0),
+      currency: currency || "BRL",
+      content_ids: contentIds || [],
+      content_type: "product",
+      order_id: orderId || undefined,
+    },
+  };
+
+  if (eventId) eventData.event_id = eventId;
+
+  const body = {data: [eventData]};
+
+  const url = `https://graph.facebook.com/v21.0/${META_PIXEL_ID}/events?access_token=${encodeURIComponent(capiToken)}`;
+  const resp = await axios.post(url, body, {
+    headers: {"Content-Type": "application/json"},
+    timeout: 10000,
+  });
+
+  logger.info("[CAPI] Evento enviado:", {eventName, eventId, status: resp.status, response: resp.data});
 }
 
 // --- FUNÇÕES AUXILIARES DE FORMATAÇÃO E E-MAIL ---
@@ -320,7 +369,7 @@ exports.criarPreferencia = onRequest({cors: ALLOWED_ORIGINS, secrets: [mpKeyPara
   }
 
   try {
-    const {itens, usuarioId, frete, cliente, dadosEntrega} = req.body;
+    const {itens, usuarioId, frete, cliente, dadosEntrega, fbEventId} = req.body;
 
     if (!usuarioId) {
       res.status(400).json({error: "usuarioId é obrigatório"});
@@ -401,6 +450,7 @@ exports.criarPreferencia = onRequest({cors: ALLOWED_ORIGINS, secrets: [mpKeyPara
         cep: dadosEntrega?.cep || null
       },
       status_pagamento: "pending",
+      fbEventId: fbEventId || null,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 
@@ -518,7 +568,7 @@ exports.calcularFrete = onRequest({cors: ALLOWED_ORIGINS, secrets: [melhorEnvioT
  * 3. FUNÇÃO: Webhook de Notificação Mercado Pago
  */
 exports.notificacaoPagamento = onRequest(
-  {cors: true, secrets: [mpKeyParam, mpWebhookSecret, blingClientId, blingClientSecret]},
+  {cors: true, secrets: [mpKeyParam, mpWebhookSecret, blingClientId, blingClientSecret, metaCapiToken]},
   async (req, res) => {
   try {
     const webhookSec = mpWebhookSecret.value();
@@ -619,6 +669,26 @@ exports.notificacaoPagamento = onRequest(
         }
 
         await enviarParaBling(paymentDetails);
+
+        // --- Meta Conversions API (CAPI) — Purchase ---
+        try {
+          const capiToken = metaCapiToken.value();
+          if (capiToken) {
+            await enviarEventoMetaCAPI({
+              eventName: "Purchase",
+              eventId: draftData?.fbEventId || null,
+              email: payerEmail,
+              phone: draftData?.cliente?.telefone || draftData?.telefone || null,
+              value: total,
+              currency: "BRL",
+              contentIds: items.map((i) => String(i.id)),
+              orderId: paymentId,
+              capiToken,
+            });
+          }
+        } catch (capiErr) {
+          logger.error("Erro ao enviar evento CAPI:", capiErr.message);
+        }
       }
     }
     res.status(200).send("OK");

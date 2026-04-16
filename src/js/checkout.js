@@ -2,6 +2,7 @@
 import { iniciarPagamentoMP, obterCalculoFrete } from './checkoutService.js';
 import { validarCupom } from '../firebase/couponService.js';
 import { getProducts } from '../firebase/productService.js';
+import { trackInitiateCheckout, generateEventId } from './metaPixel.js';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
@@ -964,6 +965,9 @@ export async function startCheckout() {
 
     const ownerId = getCheckoutOwnerId();
 
+    // Gera event_id para desduplicação Meta Pixel ↔ CAPI
+    const purchaseEventId = generateEventId();
+
     localStorage.setItem(
       'last_order',
       JSON.stringify({
@@ -982,6 +986,7 @@ export async function startCheckout() {
         metodoEntregaId: methodKey || null,
         metodoEntrega: selectedOption?.nome || (methodKey || null),
         criadoEm: Date.now(),
+        fbEventId: purchaseEventId,
       })
     );
 
@@ -1038,6 +1043,7 @@ export async function startCheckout() {
       getFreteEfetivo(),
       cliente,
       dadosEntrega,
+      purchaseEventId,
     );
     const initPoint = pref?.init_point || pref?.initPoint || '';
     if (!initPoint) {
@@ -1178,6 +1184,16 @@ function init() {
   if (loginAnchor) loginAnchor.setAttribute('href', '/login?redirect=checkout');
 
   loadCart();
+
+  // Meta Pixel — InitiateCheckout
+  if (carrinhoAtual.length > 0) {
+    trackInitiateCheckout({
+      contentIds: carrinhoAtual.map((i) => i.id),
+      numItems: carrinhoAtual.reduce((s, i) => s + (i.quantidade || 1), 0),
+      value: subtotalAtual,
+    });
+  }
+
   carregarDraft();
   bindDeliveryEvents();
   renderDeliveryOptions();

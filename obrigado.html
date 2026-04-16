@@ -173,5 +173,21 @@
   <script type="module" src="src/js/cartBadge.js"></script>
   <script type="module" src="src/js/headerUser.js"></script>
   <script type="module" src="src/js/script.js"></script>
+  <script type="module">
+    import { trackPurchase } from './src/js/metaPixel.js';
+    try {
+      const raw = localStorage.getItem('last_order');
+      if (raw) {
+        const order = JSON.parse(raw);
+        const itens = Array.isArray(order?.itens) ? order.itens : [];
+        trackPurchase({
+          contentIds: itens.map((i) => i.id),
+          value: Number(order?.total || 0),
+          currency: 'BRL',
+          orderId: order?.userId || '',
+        }, order?.fbEventId || undefined);
+      }
+    } catch { /* ignore */ }
+  </script>
 </body>
 </html>
