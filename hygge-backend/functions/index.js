@@ -360,16 +360,61 @@ admin.initializeApp();
 const db = admin.firestore();
 
 /**
+ * Calcula opções de frete via Melhor Envio — uso interno compartilhado.
+ */
+async function calcularFreteInterno(cepDestino, itens, token) {
+  const payload = {
+    from: {postal_code: "06790030"},
+    to: {postal_code: String(cepDestino).replace(/\D/g, "")},
+    products: itens.map((item) => ({
+      id: item.id,
+      width: 15,
+      height: 6,
+      length: 15,
+      weight: 0.35,
+      insurance_value: Number(item.preco),
+      quantity: item.quantidade,
+    })),
+  };
+
+  const response = await axios.post(
+    "https://melhorenvio.com.br/api/v2/me/shipment/calculate",
+    payload,
+    {
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+        "User-Agent": "HyggeGames (contato@hyggegames.com.br)",
+      },
+    },
+  );
+
+  return response.data
+    .filter((s) => {
+      if (s.price == null || s.error) return false;
+      return String(s.company?.name || "").toLowerCase().includes("total express");
+    })
+    .map((s) => ({
+      id: s.id,
+      nome: `Total Express - ${s.name}`,
+      valor: Number(s.price),
+      prazo: s.delivery_range?.max ? `${s.delivery_range.max} dias úteis` : "",
+    }))
+    .sort((a, b) => a.valor - b.valor);
+}
+
+/**
  * 1. FUNÇÃO: Criar Preferência (Checkout Mercado Pago)
  */
-exports.criarPreferencia = onRequest({cors: ALLOWED_ORIGINS, secrets: [mpKeyParam]}, async (req, res) => {
+exports.criarPreferencia = onRequest({cors: ALLOWED_ORIGINS, secrets: [mpKeyParam, melhorEnvioToken]}, async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).send("Método não permitido");
     return;
   }
 
   try {
-    const {itens, usuarioId, frete, cliente, dadosEntrega, fbEventId} = req.body;
+    const {itens, usuarioId, frete, cliente, dadosEntrega, fbEventId, cupom} = req.body;
 
     if (!usuarioId) {
       res.status(400).json({error: "usuarioId é obrigatório"});
@@ -423,7 +468,51 @@ exports.criarPreferencia = onRequest({cors: ALLOWED_ORIGINS, secrets: [mpKeyPara
     });
 
     const subtotal = validatedItems.reduce((acc, i) => acc + (i.preco * i.quantidade), 0);
-    const freteVal = Math.max(0, Number(frete || 0));
+
+    // --- Validação de frete server-side ---
+    const metodoEntregaId = dadosEntrega?.metodoEntregaId;
+    const isRetirada = String(metodoEntregaId || "").toLowerCase() === "retirada";
+    let freteVal = 0;
+    if (!isRetirada) {
+      const cepEntrega = String(dadosEntrega?.cep || "").replace(/\D/g, "");
+      if (!cepEntrega) {
+        res.status(400).json({error: "CEP de entrega obrigatório."});
+        return;
+      }
+      const opcoesValidas = await calcularFreteInterno(cepEntrega, validatedItems, melhorEnvioToken.value());
+      const opcaoEscolhida = opcoesValidas.find((o) => String(o.id) === String(metodoEntregaId));
+      if (!opcaoEscolhida) {
+        logger.warn("[criarPreferencia] Opção de frete inválida:", {metodoEntregaId, cepEntrega, opcoes: opcoesValidas.map((o) => o.id)});
+        res.status(400).json({error: "Opção de frete inválida para o CEP informado."});
+        return;
+      }
+      freteVal = opcaoEscolhida.valor;
+    }
+
+    // --- Validação server-side do cupom ---
+    let cupomValido = false;
+    let cupomTipo = null;
+    if (cupom && typeof cupom === "string") {
+      const cupomNorm = cupom.trim().toLowerCase().normalize("NFC");
+      try {
+        const cupomSnap = await admin.firestore().collection("cupons").doc(cupomNorm).get();
+        if (cupomSnap.exists) {
+          const cupomData = cupomSnap.data();
+          const temFreteGratis = Array.isArray(cupomData?.tipo) &&
+            cupomData.tipo.some((item) =>
+              item && typeof item === "object" &&
+              String(item.categoria || "").trim().toLowerCase().normalize("NFC") === "frete grátis"
+            );
+          if (temFreteGratis) {
+            freteVal = 0;
+            cupomValido = true;
+            cupomTipo = "frete_gratis";
+          }
+        }
+      } catch (err) {
+        logger.warn("[criarPreferencia] Erro ao validar cupom:", err);
+      }
+    }
 
     const draftRef = admin.firestore().collection("orders_draft").doc(docId);
 
@@ -441,6 +530,8 @@ exports.criarPreferencia = onRequest({cors: ALLOWED_ORIGINS, secrets: [mpKeyPara
       subtotal: subtotal,
       frete: freteVal,
       total: subtotal + freteVal,
+      cupom: cupomValido ? (cupom?.trim().toLowerCase().normalize("NFC") || null) : null,
+      cupomTipo: cupomTipo || null,
       dadosEntrega: {
         endereco: dadosEntrega?.endereco || null,
         numero: dadosEntrega?.numero || null,
@@ -504,59 +595,18 @@ exports.criarPreferencia = onRequest({cors: ALLOWED_ORIGINS, secrets: [mpKeyPara
  */
 exports.calcularFrete = onRequest({cors: ALLOWED_ORIGINS, secrets: [melhorEnvioToken]}, async (req, res) => {
   if (req.method !== "POST") return res.status(405).send("Método não permitido");
-  
+
   try {
     const {cepDestino, itens} = req.body;
-    
-    const payload = {
-      from: {postal_code: "06790030"}, 
-      to: {postal_code: cepDestino.replace(/\D/g, "")},
-      products: itens.map((item) => ({
-        id: item.id,
-        width: 15,
-        height: 6,
-        length: 15,
-        weight: 0.35, 
-        insurance_value: Number(item.preco),
-        quantity: item.quantidade,
-      }))
-    };
 
-    const response = await axios.post(
-      "https://melhorenvio.com.br/api/v2/me/shipment/calculate",
-      payload,
-      {
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${melhorEnvioToken.value()}`,
-          "User-Agent": "HyggeGames (contato@hyggegames.com.br)",
-        },
-      }
-    );
+    if (!cepDestino || typeof cepDestino !== "string") {
+      return res.status(400).json({error: "cepDestino inválido."});
+    }
+    if (!Array.isArray(itens) || itens.length === 0) {
+      return res.status(400).json({error: "itens inválido."});
+    }
 
-    const opcoes = response.data
-      .filter((s) => {
-        if (s.price == null || s.error) return false;
-        const nomeEmpresa = String(s.company?.name || "").toLowerCase();
-        if (nomeEmpresa.includes("total express")) return true;
-        return false;
-      })
-      .map((s) => {
-        const nomeEmpresaOriginal = s.company?.name || "";
-        let nomeExibicao = s.name;
-        if (nomeEmpresaOriginal.toLowerCase().includes("total express")) {
-          nomeExibicao = `Total Express - ${s.name}`;
-        }
-        return {
-          id: s.id,
-          nome: nomeExibicao,
-          valor: Number(s.price),
-          prazo: s.delivery_range?.max ? `${s.delivery_range.max} dias úteis` : '',
-        };
-      })
-      .sort((a, b) => a.valor - b.valor);
-
+    const opcoes = await calcularFreteInterno(cepDestino, itens, melhorEnvioToken.value());
     res.json(opcoes);
   } catch (error) {
     logger.error("Erro no cálculo de frete Melhor Envio:", error.message);
@@ -568,7 +618,7 @@ exports.calcularFrete = onRequest({cors: ALLOWED_ORIGINS, secrets: [melhorEnvioT
  * 3. FUNÇÃO: Webhook de Notificação Mercado Pago
  */
 exports.notificacaoPagamento = onRequest(
-  {cors: true, secrets: [mpKeyParam, mpWebhookSecret, blingClientId, blingClientSecret, metaCapiToken]},
+  {cors: false, secrets: [mpKeyParam, mpWebhookSecret, blingClientId, blingClientSecret, metaCapiToken]},
   async (req, res) => {
   try {
     const webhookSec = mpWebhookSecret.value();
@@ -824,12 +874,52 @@ async function obterTokenBling() {
 }
 
 /**
- * 4b. Bling OAuth2 — Callback
+ * 4b. Bling OAuth2 — Iniciar autorização (gera state anti-CSRF)
+ * Apenas admins autenticados podem chamar. Retorna a URL de autorização do Bling.
  */
-exports.callbackBling = onRequest({cors: true, secrets: [blingClientId, blingClientSecret]}, async (req, res) => {
+exports.authorizeBling = onRequest({cors: ALLOWED_ORIGINS, secrets: [blingClientId]}, async (req, res) => {
+  if (req.method !== "POST") return res.status(405).send("Método não permitido");
+
+  const authHeader = req.headers.authorization || "";
+  if (!authHeader.startsWith("Bearer ")) return res.status(401).send("Não autorizado");
+  try {
+    const decoded = await admin.auth().verifyIdToken(authHeader.split("Bearer ")[1]);
+    if (!decoded.admin) return res.status(403).send("Acesso restrito a admins");
+  } catch {
+    return res.status(401).send("Token inválido");
+  }
+
+  const state = crypto.randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+  await db.collection("configuracoes").doc("bling_oauth_state").set({state, expiresAt});
+
+  const authUrl = new URL("https://api.bling.com.br/Api/v3/oauth/authorize");
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("client_id", blingClientId.value());
+  authUrl.searchParams.set("state", state);
+
+  return res.json({url: authUrl.toString()});
+});
+
+/**
+ * 4c. Bling OAuth2 — Callback
+ */
+exports.callbackBling = onRequest({cors: false, secrets: [blingClientId, blingClientSecret]}, async (req, res) => {
   try {
     const code = req.query.code;
+    const stateRecebido = req.query.state || "";
     if (!code) return res.status(400).send("Código ausente.");
+
+    // Valida state anti-CSRF
+    const stateDoc = await db.collection("configuracoes").doc("bling_oauth_state").get();
+    if (!stateDoc.exists) return res.status(403).send("State inválido ou expirado.");
+    const {state: stateEsperado, expiresAt} = stateDoc.data();
+    const expirou = expiresAt?.toMillis ? Date.now() > expiresAt.toMillis() : Date.now() > new Date(expiresAt).getTime();
+    if (expirou || !stateRecebido || stateRecebido !== stateEsperado) {
+      return res.status(403).send("State inválido ou expirado.");
+    }
+    // Consome o state (uso único)
+    await db.collection("configuracoes").doc("bling_oauth_state").delete();
 
     const credentials = Buffer.from(
       `${blingClientId.value()}:${blingClientSecret.value()}`,
@@ -1068,6 +1158,24 @@ exports.solicitarRedefinicaoSenha = onRequest({cors: ALLOWED_ORIGINS}, async (re
     const {email} = req.body || {};
     if (!email) { res.status(400).json({error: "E-mail é obrigatório"}); return; }
 
+    // Rate limiting: máximo 3 requisições por hora por e-mail
+    const emailHash = crypto.createHash("sha256").update(String(email).toLowerCase().trim()).digest("hex");
+    const rlRef = db.collection("rate_limits").doc(`reset_${emailHash}`);
+    const rlSnap = await rlRef.get();
+    const agora = Date.now();
+    const JANELA_MS = 60 * 60 * 1000; // 1 hora
+    const MAX_TENTATIVAS = 3;
+    if (rlSnap.exists) {
+      const {count, windowStart} = rlSnap.data();
+      if (agora - windowStart < JANELA_MS && count >= MAX_TENTATIVAS) {
+        return res.status(429).json({error: "Muitas tentativas. Tente novamente em 1 hora."});
+      }
+      const novoCount = agora - windowStart < JANELA_MS ? count + 1 : 1;
+      await rlRef.set({count: novoCount, windowStart: agora - windowStart < JANELA_MS ? windowStart : agora});
+    } else {
+      await rlRef.set({count: 1, windowStart: agora});
+    }
+
     let link;
     try {
       link = await admin.auth().generatePasswordResetLink(email, {
@@ -1109,47 +1217,73 @@ exports.consultarStatusPedido = onRequest({cors: ALLOWED_ORIGINS}, async (req, r
     const externalReference = req.query.external_reference || req.body?.external_reference || null;
     const paymentId = req.query.payment_id || req.body?.payment_id || null;
 
-    if (!externalReference && !paymentId) {
-      return res.status(400).json({error: "Informe external_reference ou payment_id."});
+    // external_reference é sempre obrigatório — impede enumeração por payment_id isolado
+    if (!externalReference) {
+      return res.status(400).json({error: "external_reference é obrigatório."});
     }
 
+    const extRef = String(externalReference);
+    const isGuest = extRef.startsWith("guest_");
+
+    // Se token de auth estiver presente, valida e garante que pertence ao external_reference
+    if (!isGuest) {
+      const authHeader = req.headers.authorization || "";
+      if (authHeader.startsWith("Bearer ")) {
+        try {
+          const decoded = await admin.auth().verifyIdToken(authHeader.split("Bearer ")[1]);
+          if (decoded.uid !== extRef) {
+            return res.status(403).json({error: "Acesso negado."});
+          }
+        } catch {
+          return res.status(401).json({error: "Token inválido."});
+        }
+      }
+      // Sem token: permite consulta — extRef é UUID não-sequencial (não adivinhável)
+    }
+
+    // Busca na coleção orders (pedido finalizado) — payment_id é o doc ID
     if (paymentId) {
       try {
         const orderSnap = await db.collection("orders").doc(String(paymentId)).get();
         if (orderSnap.exists) {
           const d = orderSnap.data() || {};
-          return res.json({
-            found: true, source: "orders", orderId: orderSnap.id,
-            status: d.status_pagamento || "approved", approved: true,
-          });
+          // Garante que o pedido pertence ao external_reference informado
+          if (String(d.userId || "") === extRef || isGuest) {
+            return res.json({
+              found: true, source: "orders", orderId: orderSnap.id,
+              status: d.status_pagamento || "approved", approved: true,
+            });
+          }
         }
       } catch (e) {}
     }
 
-    if (externalReference) {
-      try {
-        const draftSnap = await db.collection("orders_draft").doc(String(externalReference)).get();
-        if (draftSnap.exists) {
-          const d = draftSnap.data() || {};
-          const approved = d.status_pagamento === "approved";
-          return res.json({
-            found: true, source: "orders_draft", orderId: draftSnap.id,
-            status: d.status_pagamento || "pending", approved,
-          });
-        }
-      } catch (e) {}
-    }
+    // Busca no rascunho pelo external_reference
+    try {
+      const draftSnap = await db.collection("orders_draft").doc(extRef).get();
+      if (draftSnap.exists) {
+        const d = draftSnap.data() || {};
+        const approved = d.status_pagamento === "approved";
+        return res.json({
+          found: true, source: "orders_draft", orderId: draftSnap.id,
+          status: d.status_pagamento || "pending", approved,
+        });
+      }
+    } catch (e) {}
 
+    // Busca no rascunho pelo mercadopago_id (fallback para Pix aprovado antes do webhook)
     if (paymentId) {
       try {
         const draftByMpSnap = await db.collection("orders_draft")
-          .where("mercadopago_id", "==", String(paymentId)).limit(1).get();
+          .where("mercadopago_id", "==", String(paymentId))
+          .where("userId", "==", extRef)
+          .limit(1).get();
         if (!draftByMpSnap.empty) {
-          const doc = draftByMpSnap.docs[0];
-          const d = doc.data() || {};
+          const docSnap = draftByMpSnap.docs[0];
+          const d = docSnap.data() || {};
           const approved = d.status_pagamento === "approved";
           return res.json({
-            found: true, source: "orders_draft_by_payment_id", orderId: doc.id,
+            found: true, source: "orders_draft_by_payment_id", orderId: docSnap.id,
             status: d.status_pagamento || "pending", approved,
           });
         }
