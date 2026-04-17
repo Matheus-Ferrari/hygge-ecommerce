@@ -9,7 +9,12 @@ function getFirstName(fullName) {
 }
 
 function buildUserButtonHtml(firstName) {
-  const safeName = (firstName || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeName = (firstName || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
   return `
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right:8px;">
       <path d="M20 21a8 8 0 0 0-16 0" />

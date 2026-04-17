@@ -664,9 +664,16 @@ async function upsertOrderDraft(customerData) {
   };
 
   const ref = doc(db, 'orders_draft', String(ownerId));
-  const existing = await getDoc(ref);
-  if (!existing.exists()) {
+  // Guests não têm permissão de leitura no Firestore (só create/update),
+  // por isso pulamos o getDoc para guests e sempre incluímos createdAt.
+  const isGuest = !usuarioAtual;
+  if (isGuest) {
     payload.createdAt = now;
+  } else {
+    const existing = await getDoc(ref);
+    if (!existing.exists()) {
+      payload.createdAt = now;
+    }
   }
 
   await setDoc(ref, payload, { merge: true });
@@ -1044,6 +1051,7 @@ export async function startCheckout() {
       cliente,
       dadosEntrega,
       purchaseEventId,
+      cupomAplicado || null,
     );
     const initPoint = pref?.init_point || pref?.initPoint || '';
     if (!initPoint) {

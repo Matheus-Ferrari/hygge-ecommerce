@@ -4,34 +4,12 @@
   <script>!function(){var d=document.documentElement;d.style.visibility='hidden';d.style.background='#003028';window.__plShow=function(){d.style.visibility='';delete window.__plShow};}();</script>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-S1BC0HPJBH"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'G-S1BC0HPJBH');
-  </script>
+  <script src="/gtag.js"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Criar conta | Hygge Games</title>
   <link rel="icon" href="/img/logopreta.png" type="image/png" sizes="any">
-  <script>
-    if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js').catch(function(){}); }
-    (function() {
-      try {
-        var c = JSON.parse(localStorage.getItem('hygge_assets_v1') || 'null');
-        if (!c) return;
-        var m = window.innerWidth <= 768, p = location.pathname;
-        var u = (p.indexOf('/login') === 0 || p.indexOf('/cadastro') === 0)
-          ? (m ? c.bannerLoginMobile || c.bannerLogin : c.bannerLogin || c.bannerLoginMobile)
-          : null;
-        if (u && u.indexOf('http') === 0) {
-          var l = document.createElement('link');
-          l.rel = 'preload'; l.as = 'image'; l.href = u;
-          document.head.appendChild(l);
-        }
-      } catch(e) {}
-    })();
-  </script>
+  <script src="/banner-sw.js"></script>
   <link rel="stylesheet" href="src/css/style.css">
   <link rel="stylesheet" href="src/css/footer.css">
   <style>
@@ -275,13 +253,7 @@
   <div id="footer-container"></div>
     <script type="module" src="src/js/auth.js"></script>
     <script type="module" src="src/js/script.js"></script>
-  <script>
-    fetch('/components/footer.html')
-      .then(response => response.text())
-      .then(html => {
-        document.getElementById('footer-container').innerHTML = html;
-      });
-  </script>
+  <script src="/footer-loader.js"></script>
   <script type="module" src="src/js/menu.js"></script>
 </body>
 </html>

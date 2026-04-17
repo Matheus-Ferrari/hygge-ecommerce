@@ -12,7 +12,7 @@ const API_BASE_URL = "https://us-central1-e-commerce-hygge.cloudfunctions.net";
  * Envia os itens do carrinho e o frete para gerar o link de pagamento no Mercado Pago.
  * Agora também envia dados do cliente e entrega para salvar o rascunho no Firestore.
  */
-export const iniciarPagamentoMP = async (itens, usuarioId, frete = 0, cliente = {}, dadosEntrega = {}, fbEventId = null) => {
+export const iniciarPagamentoMP = async (itens, usuarioId, frete = 0, cliente = {}, dadosEntrega = {}, fbEventId = null, cupom = null) => {
   const headers = { "Content-Type": "application/json" };
 
   // Envia token de auth se o usuário estiver logado
@@ -32,6 +32,7 @@ export const iniciarPagamentoMP = async (itens, usuarioId, frete = 0, cliente = 
       cliente: cliente,
       dadosEntrega: dadosEntrega,
       fbEventId: fbEventId || undefined,
+      cupom: cupom || undefined,
     }),
   });
 

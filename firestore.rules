@@ -26,10 +26,10 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    // 4. RASCUNHOS DE CHECKOUT: Usuário logado acessa o próprio doc; guest pode ler/criar/atualizar.
+    // 4. RASCUNHOS DE CHECKOUT: Usuário logado acessa o próprio doc; guest só pode criar/atualizar (sem leitura client-side).
     match /orders_draft/{draftId} {
       allow read, write: if request.auth != null && request.auth.uid == draftId;
-      allow read, create, update: if draftId.matches('guest_.*');
+      allow create, update: if draftId.matches('guest_.*');
     }
 
     // 5. E-MAILS TRANSACIONAIS: Apenas criar; validação de 'to' para evitar uso como relay.
