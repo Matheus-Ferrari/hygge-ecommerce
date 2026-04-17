@@ -3,12 +3,7 @@
 <head>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-S1BC0HPJBH"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'G-S1BC0HPJBH');
-  </script>
+  <script src="/gtag.js"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Carrinho | Hygge Games</title>
@@ -53,13 +48,7 @@
 
     <script type="module" src="src/js/cartPage.js"></script>
     <div id="footer-container"></div>
-    <script>
-      fetch('/components/footer.html')
-        .then(response => response.text())
-        .then(html => {
-          document.getElementById('footer-container').innerHTML = html;
-        });
-    </script>
+    <script src="/footer-loader.js"></script>
     <script type="module" src="src/js/menu.js"></script>
     <script type="module" src="src/js/cartBadge.js"></script>
     <script type="module" src="src/js/headerUser.js"></script>
